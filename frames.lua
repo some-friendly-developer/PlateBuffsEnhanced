@@ -170,16 +170,8 @@ local function CreateBuffFrame(parentFrame, unit)
     f.unit = unit  -- Store unit token instead of nameplate reference
     f:SetFrameStrata("BACKGROUND")
 
-    -- Set initial size (will be adjusted in iconOnShow based on P.iconSize)
-    local initialSize = (P and P.iconSize) or 24
-    f:SetWidth(initialSize)
-    f:SetHeight(initialSize)
-
     f.icon = CreateFrame("Frame", nil, f)
     f.icon:SetPoint("TOP", f)
-    f.icon:SetWidth(initialSize)
-    f.icon:SetHeight(initialSize)
-
     f.texture = f.icon:CreateTexture(nil, "BACKGROUND")
     f.texture:SetAllPoints(true)
 
@@ -227,6 +219,7 @@ local function CreateBarFrame(parentFrame, unit)
     f.auraUpdateInterval = 0.5  -- Check auras every 500ms
 
     f:SetFrameStrata("BACKGROUND")
+    f:SetBackdrop(nil)  -- Remove any border
     f:SetWidth(1)
     f:SetHeight(1)
 
@@ -377,37 +370,14 @@ function core:AddBuffsToPlate(unit)
                     buffFrames[unit][i].debuffType = guidBuffs[unit][i].debuffType
                     buffFrames[unit][i].playerCast = guidBuffs[unit][i].playerCast
 
-                    -- Set the texture from the aura icon
-                    local icon = nil
-                    local spellName = guidBuffs[unit][i].name or "Unknown"
-                    
-                    -- Try to get the spell icon first (most reliable)
-                    if guidBuffs[unit][i].spellId then
-                        local _, _, spellIcon = GetSpellInfo(guidBuffs[unit][i].spellId)
-                        if spellIcon then
-                            icon = spellIcon
-                        end
-                    end
-                    
-                    -- If still no icon, try the UnitAura icon
-                    if not icon and guidBuffs[unit][i].icon then
-                        icon = guidBuffs[unit][i].icon
-                    end
-                    
-                    
-                    -- Normalize the path (convert backslashes to forward slashes)
-                    if icon then
-                        icon = icon:gsub("\\", "/")
-                    end
-                    
-                    -- Set the texture with proper handling
-                    if icon and icon ~= "" then
-                        buffFrames[unit][i].texture:SetTexture(icon)
-                        -- Set full texture coordinates to display the entire icon
+                    -- Set the texture exactly like original PlateBuffs
+                    -- Icon from UnitAura is already a full path like "Interface\Icons\IconName"
+                    if guidBuffs[unit][i].icon and guidBuffs[unit][i].icon ~= "" then
+                        buffFrames[unit][i].texture:SetTexture(guidBuffs[unit][i].icon)
                         buffFrames[unit][i].texture:SetTexCoord(0, 1, 0, 1)
                     else
-                        -- Fallback to question mark
-                        buffFrames[unit][i].texture:SetTexture("Interface/Icons/INV_Misc_QuestionMark")
+                        -- Fallback to question mark with full path
+                        buffFrames[unit][i].texture:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
                         buffFrames[unit][i].texture:SetTexCoord(0, 1, 0, 1)
                     end
 
