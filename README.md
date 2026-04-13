@@ -1,5 +1,7 @@
 # PlateBuffs Enhanced
 
+A World of Warcraft: Wrath of the Lich King (WotLK) addon that displays buffs and debuffs directly on enemy nameplates for easy visibility during combat.
+
 ## ⚡ Disclaimer
 
 **This addon is 100% vibe coded with 0 understanding of what is going on.** It works, the debuffs display, features function—but if you ask how or why, the honest answer is "I have no idea". Proceed at your own risk and with the understanding that this is powered purely by intuition and trial-and-error.
