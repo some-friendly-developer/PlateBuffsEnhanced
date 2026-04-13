@@ -31,6 +31,26 @@
 3. Restart World of Warcraft or reload the UI
 4. Type `/pb` in-game to open the configuration panel
 
+### Migrating from Original PlateBuffs
+
+If you're upgrading from the original PlateBuffs addon, you can import your existing configuration:
+
+1. Locate your original PlateBuffs saved variables:
+   ```
+   World of Warcraft/WTF/Account/<AccountName>/SavedVariables/PlateBuffs.lua
+   ```
+
+2. Copy the file and rename it to:
+   ```
+   PlateBuffsEnhanced.lua
+   ```
+
+3. Place the renamed file in the same SavedVariables folder
+
+4. Reload the UI or restart WoW
+
+Your custom spell lists and settings will be imported automatically!
+
 ## Commands
 
 | Command | Description |
