@@ -34,9 +34,6 @@ function core:OnEnable()
 --~ 	self:Debug("OnEnable", "options", self.db.profile)
 	P = self.db.profile
 	
-	if P.addSpellDescriptions == true then
-		spellIDs = self:GetAllSpellIDs()
-	end
 	
 	self:BuildSpellUI()
 end
@@ -50,12 +47,7 @@ local maxTextSize = 20
 defaultSettings.profile.defaultBuffShow			= 3
 defaultSettings.profile.defaultDebuffShow			= 1  -- Change to 1 temporarily to show all debuffs
 
-defaultSettings.profile.unknownSpellDataIcon	= true
 --~ defaultSettings.profile.showAura				= false
-defaultSettings.profile.saveNameToGUID			= true
-defaultSettings.profile.watchCombatlog			= true
-defaultSettings.profile.addSpellDescriptions = false
-
 defaultSettings.profile.watchUnitIDAuras = true
 
 defaultSettings.profile.abovePlayers		= true
@@ -106,7 +98,6 @@ core.CoreOptionsTable = {
 
 	
 	args = {
-	
 		enable = {
 			type = "toggle",	order	= 1,
 			name	= L["Enable"],
@@ -120,13 +111,6 @@ core.CoreOptionsTable = {
 			end,
 			get = function(info) return core:IsEnabled() end
 		},
-
-		unknownSpellDataIcon = {
-			type = "toggle", order	= 10,
-			name = L["Unknown spell info"],
-			desc = L["Display a question mark above plates we don't know spells for. Target or mouseover those plates."],
-		},
-		
 		defaultBuffShow = {
 			type = "select", order = 11,
 			name = L["Show Buffs"],
@@ -139,8 +123,7 @@ core.CoreOptionsTable = {
 					L["None"],
 				}
 			end,
-		},
-		
+		},	
 		defaultDebuffShow = {
 			type = "select", order = 12,
 			name = L["Show Debuffs"],
@@ -152,42 +135,6 @@ core.CoreOptionsTable = {
 					L["Mine Only"],
 					L["None"],
 				}
-			end,
-		},
-
-		saveNameToGUID = {
-			type = "toggle", order	= 15,
-			name = L["Save player GUID"],
-			desc = L["Remember player GUID's so target/mouseover isn't needed every time nameplate appears.\nKeep this enabled"],
-
-			set = function(info,val) 
-				P.saveNameToGUID = val
-			end,
-			get = function(info) return P.saveNameToGUID end
-		},
-		
-		watchCombatlog = {
-			type = "toggle", order	= 16,
-			name = L["Watch Combatlog"],
-			desc = L["Watch combatlog for people gaining/losing spells.\nDisable this if you're having performance issues."],
-			set = function(info,val) 
-				P.watchCombatlog = val
-				-- LibAuraInfo registration handled separately
-			end,
-		},
-		
-		addSpellDescriptions = {
-			type = "toggle", order	= 17,
-			name = L["Add Spell Description"],
-			desc = L["Add spell descriptions to the specific spell's list.\nDisabling this will lower memory usage and login time."],
-
-			set = function(info,val) 
-				P.addSpellDescriptions = val
-				
-				if val then
-					spellIDs = core:GetAllSpellIDs()
-					core:BuildSpellUI()
-				end
 			end,
 		},
 		
@@ -772,16 +719,7 @@ function core:BuildSpellUI()
 			order = i,
 			args={}
 		}
-		if P.addSpellDescriptions == true then
-			SpellOptionsTable.args.spellList.args[spellName].args.spellDesc = {
-				type = "description",
-				name = spellDesc,
-				order = 1,
-				image = spellTexture, 
-				imageWidth = 32,
-				imageHeight = 32,
-			}
-		end
+		
 		--UI elements
 		SpellOptionsTable.args.spellList.args[spellName].args.showOpt = {
 			type = "select",	order = 2,
