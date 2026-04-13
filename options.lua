@@ -462,6 +462,9 @@ core.BarOptionsTable = {
 				P.showBarBackground = val
 				core:UpdateBarsBackground()
 			end,
+			get = function(info) 
+				return P.showBarBackground 
+			end,
 		},
 
 		iconTestMode = {

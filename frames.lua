@@ -225,7 +225,8 @@ local function CreateBarFrame(parentFrame, unit)
 
     f.barBG = f:CreateTexture(nil, "BACKGROUND")
     f.barBG:SetAllPoints(true)
-    f.barBG:SetTexture(1, 1, 1, 0.3)
+    f.barBG:SetTexture("Interface\\Buttons\\WHITE8x8")  -- Use WoW's built-in white texture
+    f.barBG:SetVertexColor(1, 1, 0, 0.5)  -- Yellow with 50% alpha for visibility
 
     if P.showBarBackground == true then
         f.barBG:Show()
