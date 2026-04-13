@@ -375,10 +375,12 @@ function core:AddBuffsToPlate(unit)
                     if guidBuffs[unit][i].icon and guidBuffs[unit][i].icon ~= "" then
                         buffFrames[unit][i].texture:SetTexture(guidBuffs[unit][i].icon)
                         buffFrames[unit][i].texture:SetTexCoord(0, 1, 0, 1)
+                        buffFrames[unit][i].texture:SetAlpha(0.65)
                     else
                         -- Fallback to question mark with full path
                         buffFrames[unit][i].texture:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
                         buffFrames[unit][i].texture:SetTexCoord(0, 1, 0, 1)
+                        buffFrames[unit][i].texture:SetAlpha(0.65)
                     end
 
                     buffFrames[unit][i]:Show()

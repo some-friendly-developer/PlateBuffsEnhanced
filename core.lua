@@ -678,7 +678,7 @@ function core:SecondsToString(seconds, maxLength)
     local maxLength = maxLength or 2
 
     if seconds == 0 then
-        msg = "0s"
+        msg = "0"
     else
         local sYear, sMonth, sDay, sHour, sMinute = 0, 0, 0, 0, 0
 
@@ -731,7 +731,7 @@ function core:SecondsToString(seconds, maxLength)
         end
         if seconds > 0 and sLength < maxLength then
             sLength = sLength + 1
-            msg = msg .. seconds .. "s "
+            msg = msg .. seconds .. " "
         end
     end
 
