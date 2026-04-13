@@ -9,7 +9,7 @@
 **This addon is designed for [Awesome WotLK](https://github.com/FrostAtom/awesome_wotlk) only.** It uses the modern C_NamePlate API which is specific to this version and will not work with other WoW versions or private servers that don't support these APIs.
 
 ### Requirements
-- [Awesome WotLK](https://github.com/FrostAtom/awesome_wotlk) client installed
+- [Awesome WotLK](https://github.com/FrostAtom/awesome_wotlk) patch installed
 
 ## Features
 
@@ -36,8 +36,6 @@
 | Command | Description |
 |---------|-------------|
 | `/pb` | Open configuration panel |
-| `/pb debug` | Show debug information about tracked nameplates |
-| `/pb test` | Test nameplate detection |
 
 ## Screenshots
 
@@ -103,16 +101,6 @@ Add spells to "Specific Spells" section to customize their display:
 3. **Frame Creation**: Dynamically creates texture frames above nameplates for each aura
 4. **Filtering**: Applies your configured show/hide rules to determine which auras display
 5. **Updates**: OnUpdate hooks refresh aura status and remove expired auras
-
-### UnitAura API (Awesome WotLK)
-
-The addon uses the UnitAura() function with the following return values:
-
-```lua
-name, rank, icon, count, dispelType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate, spellId = UnitAura(unit, index, "HELPFUL|HARMFUL")
-```
-
-Note the `rank` field at position 2 - this is specific to this WoW version and shifts the icon texture path to position 3.
 
 ## Troubleshooting
 
