@@ -47,9 +47,14 @@ If you're upgrading from the original PlateBuffs addon, you can import your exis
    PlateBuffsEnhanced.lua
    ```
 
-3. Place the renamed file in the same SavedVariables folder
+3. **Important:** Open the renamed `PlateBuffsEnhanced.lua` file in a text editor and replace all instances of `PB_DB` with `PBE_DB`:
+   - Find: `PB_DB`
+   - Replace with: `PBE_DB`
+   - Save the file
 
-4. Reload the UI or restart WoW
+4. Place the renamed file in the same SavedVariables folder
+
+5. Reload the UI or restart WoW
 
 Your custom spell lists and settings will be imported automatically!
 
