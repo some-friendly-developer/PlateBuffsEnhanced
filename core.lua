@@ -33,6 +33,9 @@ local select = select
 local type = type
 local Debug = core.Debug
 
+-- OPTIMIZATION: Cache player GUID at load time
+local playerGUID = UnitGUID("player")
+
 -- Addon metadata
 core.title = "Plate Buffs |cff1784d1Enhanced|r"
 core.version = GetAddOnMetadata(folder, "X-Curse-Packaged-Version") or ""
@@ -571,7 +574,7 @@ function core:UpdateAurasForUnit(unit, frame)
 end
 
 function core:IsCasterPlayer(caster)
-    -- Handle different caster formats: "player", player GUID, or other values
+    -- OPTIMIZATION: Use cached playerGUID instead of calling UnitGUID repeatedly
     if not caster then
         return false
     end
@@ -580,20 +583,18 @@ function core:IsCasterPlayer(caster)
         return true
     end
     
-    -- Try comparing as strings first
-    local playerGUID = UnitGUID("player")
+    -- Direct GUID comparison (most common case)
     if playerGUID and caster == playerGUID then
         return true
     end
     
-    -- Also check if caster contains any of the player's GUID substrings
-    -- Some WoW versions return GUIDs in different formats
-    if playerGUID and caster then
-        -- Extract numeric parts from both GUIDs for comparison
-        local playerNum = playerGUID:gsub("x", ""):gsub("-", "")
-        local casterNum = tostring(caster):gsub("x", ""):gsub("-", "")
+    -- Fallback for edge cases with different GUID formats
+    -- Only do expensive string operations if absolutely necessary
+    if playerGUID and caster and type(caster) == "string" then
+        local playerNum = playerGUID:gsub("[x%-]", "")
+        local casterNum = tostring(caster):gsub("[x%-]", "")
         
-        if playerNum and casterNum and playerNum == casterNum then
+        if playerNum == casterNum then
             return true
         end
     end
