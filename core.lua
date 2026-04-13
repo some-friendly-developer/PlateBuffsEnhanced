@@ -34,7 +34,7 @@ local type = type
 local Debug = core.Debug
 
 -- Addon metadata
-core.title = "Plate Buffs |cFF518cffEnhanced|r"
+core.title = "Plate Buffs |cff1784d1Enhanced|r"
 core.version = GetAddOnMetadata(folder, "X-Curse-Packaged-Version") or ""
 core.titleFull = core.title .. " " .. core.version
 core.addonDir = "Interface\\AddOns\\" .. folder .. "\\"
