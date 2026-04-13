@@ -11,7 +11,4 @@
 	<Include file="Ace3\AceEvent-3.0\AceEvent-3.0.xml"/>
 	<Include file="Ace3\AceLocale-3.0\AceLocale-3.0.xml"/>
 	<Include file="Ace3\AceSerializer-3.0\AceSerializer-3.0.xml"/>
-
-	<Include file="LibNameplate-1.0\lib.xml"/>
-	<Include file="LibAuraInfo-1.0\lib.xml"/>
 </Ui>

@@ -1,0 +1,22 @@
+## Interface: 30300
+## Title: Plate Buffs |cFF518cffEnhanced|r
+## Version: 2.0.1
+## Notes: Show buffs on nameplates using Awesome WotLK's C_NamePlate API
+## Author: |cFFfff569Sixset|r-Freedom WoW, Refactored for C_NamePlate
+## SavedVariables: PBE_DB
+## OptionalDeps: LibStub, CallbackHandler-1.0, Ace3
+## X-NamePlate-API: Requires Awesome WotLK C_NamePlate backport
+
+## LoadManagers: AddonLoader
+## X-LoadOn-Always: true
+
+#@no-lib-strip@
+libs\embeds.xml
+#@end-no-lib-strip@
+
+locales\locales.xml
+
+func.lua
+core.lua
+frames.lua
+options.lua

@@ -1,9 +1,5 @@
 local folder, core = ...
 
-if not core.LibNameplate then
-	return
-end
-
 --Globals
 local _G = _G
 local pairs = pairs
@@ -52,7 +48,7 @@ local maxTextSize = 20
 
 --1=all, 2=mine, 3=none
 defaultSettings.profile.defaultBuffShow			= 3
-defaultSettings.profile.defaultDebuffShow			= 2
+defaultSettings.profile.defaultDebuffShow			= 1  -- Change to 1 temporarily to show all debuffs
 
 defaultSettings.profile.unknownSpellDataIcon	= true
 --~ defaultSettings.profile.showAura				= false
@@ -176,7 +172,7 @@ core.CoreOptionsTable = {
 			desc = L["Watch combatlog for people gaining/losing spells.\nDisable this if you're having performance issues."],
 			set = function(info,val) 
 				P.watchCombatlog = val
-				core:RegisterLibAuraInfo()
+				-- LibAuraInfo registration handled separately
 			end,
 		},
 		

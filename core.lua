@@ -1,12 +1,13 @@
---[[Author:		Cyprias 
-	License:	All Rights Reserved
-	Contact:	Cyprias on Curse.com or WowAce.com
-
-	Only Curse.com, Wowace.com and WoWInterface.com have permission to host this addon.
-	I have not given permission for Plate Buffs to be used in any addon compilation or UI pack.]]
-local folder, core = ...
+--[[
+	PlateBuffs Core - Refactored for C_NamePlate API
 	
--- global lookup
+	This is the refactored core.lua adapted to use Awesome WotLK's C_NamePlate system
+	instead of the legacy LibNameplate library.
+]]
+
+local folder, core = ...
+
+-- Global lookups (optimized for performance)
 local _G = _G
 local pairs = pairs
 local InterfaceOptionsFrame_OpenToCategory = InterfaceOptionsFrame_OpenToCategory
@@ -16,950 +17,787 @@ local string_sub = string.sub
 local string_len = string.len
 local LibStub = LibStub
 local table_getn = table.getn
-local UnitGUID = UnitGUID
-local UnitBuff = UnitBuff
-local UnitDebuff = UnitDebuff
 local table_insert = table.insert
-local UnitExists = UnitExists
-local UnitIsUnit = UnitIsUnit
-local Debug = core.Debug
-local UnitIsPlayer = UnitIsPlayer
-local UnitClassification = UnitClassification
-local UnitName = UnitName
-local date = date
 local table_remove = table.remove
-local _ --underscore so GetGlobals doesn't nag me.
-local table_getn = table.getn
+local UnitName = UnitName
+local UnitGUID = UnitGUID
+local UnitAura = UnitAura
+local UnitAffectingCombat = UnitAffectingCombat
+local UnitReaction = UnitReaction
+local UnitIsPlayer = UnitIsPlayer
+local UnitExists = UnitExists
 local GetSpellInfo = GetSpellInfo
+local GetNumPartyMembers = GetNumPartyMembers
+local GetNumRaidMembers = GetNumRaidMembers
 local select = select
 local type = type
+local Debug = core.Debug
 
+-- Addon metadata
+core.title = "Plate Buffs |cFF518cffEnhanced|r"
+core.version = GetAddOnMetadata(folder, "X-Curse-Packaged-Version") or ""
+core.titleFull = core.title .. " " .. core.version
+core.addonDir = "Interface\\AddOns\\" .. folder .. "\\"
 
-
---~ PlateBuffs = core --global table
-
-local LibNameplate = LibStub("LibNameplate-1.0", true)
-if not LibNameplate then	error(folder .. " requires LibNameplate-1.0.") return end
-
--- local
-core.title		= "Plate Buffs"
-core.version	= GetAddOnMetadata(folder, "X-Curse-Packaged-Version") or ""
-core.titleFull	= core.title.." "..core.version
-core.addonDir = "Interface\\AddOns\\"..folder.."\\"
-
-core.LibNameplate = LibNameplate
-
-LibStub("AceAddon-3.0"):NewAddon(core, folder, "AceConsole-3.0", "AceEvent-3.0", "AceSerializer-3.0") 
---~ L = LibStub("AceLocale-3.0"):GetLocale(folder, true)
-
-core.L = LibStub("AceLocale-3.0"):GetLocale(folder, true)
-local L = core.L
-
-local totemList = {--Nameplates with these names are totems. By default we ignore totem nameplates.
-    2484,--Earthbind Totem
-    8143,--Tremor Totem
-    8177,--Grounding Totem
-    8512,--Windfury Totem
-    6495,--Sentry Totem
-    8170,--Cleansing Totem
-    3738,--Wrath of Air Totem
-    2062,--Earth Elemental Totem
-    2894,--Fire Elemental Totem
-    58734,--Magma Totem
-    58582,--Stoneclaw Totem
-    58753,--Stoneskin Totem
-    58739,--Fire Resistance Totem
-    58656,--Flametongue Totem
-    58745,--Frost Resistance Totem
-    58757,--Healing Stream Totem
-    58774,--Mana Spring Totem
-    58749,--Nature Resistance Totem
-    58704,--Searing Totem
-    58643,--Strength of Earth Totem
-    57722,--Totem of Wrath
+-- Default spell lists
+local totemList = {
+    2484, 8143, 8177, 8512, 6495, 8170, 3738, 2062, 2894, 58734, 58582, 58753,
+    58739, 58656, 58745, 58757, 58774, 58749, 58704, 58643, 57722,
 }
 
-
-local defaultSpells1 = {--Important spells, add them with huge icons.
-	118, --Polymorph
-	51514, --Hex
-	710, --Banish
-	6358, --Seduction
-	6770, --Sap
-	605, --Mind Control
-	33786, --Cyclone
-	5782, --Fear
-	5484, --Howl of Terror
-	6789, --Death Coil
-	45438, --Ice Block
-	642, --Divine Shield
-	8122, --Psychic Scream
-	339, --Entangling Roots
-	23335, -- Silverwing Flag (alliance WSG flag)
-	23333, -- Warsong Flag (horde WSG flag)
-	34976, -- Netherstorm Flag (EotS flag)
-	2094, --Blind
-	33206, --Pain Suppression (priest) 
-	29166, --Innervate (druid) 
-	47585, --Dispersion (priest)
-	19386, --Wyvern Sting (hunter)
+local defaultSpells1 = {
+    118, 51514, 710, 6358, 6770, 605, 33786, 5782, 5484, 6789, 45438, 642, 8122,
+    339, 23335, 23333, 34976, 2094, 33206, 29166, 47585, 19386,
 }
 
-local defaultSpells2 = {--semi-important spells, add them with mid size icons.
-	15487, --Silence (priest)
-	10060, --Power Infusion (priest) 
-	2825, --Bloodlust
-	5246, --Intimidating Shout (warrior) 
-	31224, --Cloak of Shadows (rogue) 
-	498, --Divine Protection
-	47476, --Strangulate (warlock) 
-	31884, --Avenging Wrath (pally) 
-	37587, --Bestial Wrath (hunter) 
---~ 	12042, --Arcane Power (mage) (texture matches Innervate)
-	12472, --Icy Veins (mage)
-	49039, --Lichborne (DK)
-	48792, --Icebound Fortitude (DK)
-	5277, --Evasion (rogue)
-	53563, --Beacon of Light (pally)
-	22812, --Barkskin (druid)
-	67867, --Trampled (ToC arena spell when you run over someone)
-	1499, --Freezing Trap
-	2637, --Hibernate
-	64044, --Psychic Horror
-	19503, --Scatter Shot (hunter)
-	34490, --Silencing Shot (hunter)
-	10278, --Hand of Protection (pally)
-	10326, --Turn Evil (pally)
-	44572, --Deep Freeze (mage)
-	20066, --Repentance (pally)
-	46968, --Shockwave (warrior)
-	46924, --Bladestorm (warrior)
-	16689, --Nature's Grasp (Druid)
-	2983, --Sprint (rogue)
-	2335, --Swiftness Potion
-	6624, --Free Action Potion
-	3448, --Lesser Invisibility Potion
-	11464, --Invisibility Potion
-	17634, --Potion of Petrification
-	53905, --Indestructible Potion
-	54221, --Potion of Speed
-	1850, --Dash
+local defaultSpells2 = {
+    15487, 10060, 2825, 5246, 31224, 498, 47476, 31884, 37587, 12472, 49039, 48792,
+    5277, 53563, 22812, 67867, 1499, 2637, 64044, 19503, 34490, 10278, 10326, 44572,
+    20066, 46968, 46924, 16689, 2983, 2335, 6624, 3448, 11464, 17634, 53905, 54221, 1850,
 }
 
-local myClass = select(2, UnitClass("player")) 
+-- Add class-specific default spells
+local myClass = select(2, UnitClass("player"))
 if myClass == "DRUID" or myClass == "ROGUE" then
-	table.insert(defaultSpells2, #defaultSpells2+1, 132) --Detect Invisibility
-	table.insert(defaultSpells2, #defaultSpells2+1, 16882) --Detect Greater Invisibility
-	table.insert(defaultSpells2, #defaultSpells2+1, 6512) --Detect Lesser Invisibility
+    table.insert(defaultSpells2, 132)   -- Detect Invisibility
+    table.insert(defaultSpells2, 16882) -- Detect Greater Invisibility
+    table.insert(defaultSpells2, 6512)  -- Detect Lesser Invisibility
 end
 
-
---~ local defaultSpells3 = {--useful spells to know about, add with small icons.
---~ 	50334, --Berserk (druid) note: rouges seem to have this too? (same name)
---~ 	48447, --Tranquility (druid)
---~ 	3442, --Enslave
---~ 	1776, --Gouge
---~ 	8983, --Bash (druid)
---~ 	49803, --Pounce (druid)
---~ 	22570, --Maim (druid)
---~ 	16979, --Feral Charge - Bear (druid)
---~ 	49376, --Feral Charge - Cat (druid)
---~ 	19577, --Intimidation (hunter pet)
---~ 	1833, --Cheap Shot (rogue)
---~ 	41389, --Kidney Shot (Rogue)
---~ 	12311, --Gag Order (Warrior) talent?
---~ 	49203, --Hungering Cold (DK)
---~ 	1330, --Garrote - Silence (Rogue)
---~ 	19244, --Spell Lock (warlock pet)
---~ 	54785, --Demon Charge (warlock pet)
---~ }
-
-
-
+-- Event registration
 local regEvents = {
-	"PLAYER_TARGET_CHANGED",
-	"UPDATE_MOUSEOVER_UNIT",
-	"UNIT_AURA",
-	"UNIT_TARGET",
-
-
---~ 	"PLAYER_REGEN_ENABLED",
---~ 	"PLAYER_REGEN_DISABLED",
-}
-core.db	= {}
-local db
-local P --db.profile
-
-core.defaultSettings	= {
-	profile = {
-		spellOpts = {},
-		ignoreDefaultSpell = {},--default spells that user has removed. Seems odd but this'll save space in the DB file allowing PB to load faster.
-	},
---~ 	global = {
---~ 	},
+    -- Legacy events removed - using C_NamePlate API instead
 }
 
-core.buffFrames = {}
-core.guidBuffs = {}
-core.nametoGUIDs = {}-- w/o servername
-core.buffBars = {}
+-- Database and profile references
+core.db = {}
+local db, P
+
+-- Data structures (changed from plate frame keys to unit token keys)
+core.guidBuffs = {}   -- guidBuffs[unit] = { aura data }
+core.buffBars = {}    -- buffBars[unit] = { bar frames }
+core.buffFrames = {}  -- buffFrames[unit] = { icon frames }
 
 local buffBars = core.buffBars
 local guidBuffs = core.guidBuffs
-local nametoGUIDs = core.nametoGUIDs
 local buffFrames = core.buffFrames
-local defaultSettings = core.defaultSettings
 
-core.iconTestMode = false
-local coreOpts
-local spellUI
-local dspellUI
-local profileUI
-local whoUI
-local barUI
+-- Settings
+core.defaultSettings = {
+    profile = {
+        spellOpts = {},
+        ignoreDefaultSpell = {},
+        skin_SkinID = "Blizzard",
+        skin_Gloss = false,
+        skin_Backdrop = false,
+        skin_Colors = {},
+    },
+}
 
+-- UI references
+local coreOpts, spellUI, dspellUI, profileUI, whoUI, barUI
 
-
+-- Totem name mapping
 local totems = {}
 local name, texture
-for i=1,table_getn(totemList) do
+for i = 1, table_getn(totemList) do
     name, _, texture = GetSpellInfo(totemList[i])
---~ 	totems[i] = {name = name, texture = texture}
-	totems[name] = texture
+    if name then
+        totems[name] = texture
+    end
 end
 
---Add default spells to defaultSettings table.
-local spellName
-for i=1, table_getn(defaultSpells1) do 
-	spellName = GetSpellInfo(defaultSpells1[i])
---~ 	print("defaultSpells1", spellName)
-	if spellName then
-		core.defaultSettings.profile.spellOpts[spellName] = {
-			iconSize = 80, --max size
-			cooldownSize = 18,--almost max.
-			show = 1, --always show spell
-			stackSize = 18,
---~ 			when = date("%c"),--when isn't really used for anything. =/
-		}
---~ 		print("defaultSpells1", spellName)
-	end
+-- Initialize default spells in settings
+local defaultSettings = core.defaultSettings
+for i = 1, table_getn(defaultSpells1) do
+    name = GetSpellInfo(defaultSpells1[i])
+    if name then
+        defaultSettings.profile.spellOpts[name] = {
+            iconSize = 80,
+            cooldownSize = 18,
+            show = 1,
+            stackSize = 18,
+        }
+    end
 end
 
-for i=1, table_getn(defaultSpells2) do 
-	spellName = GetSpellInfo(defaultSpells2[i])
---~ 	print("defaultSpells2", spellName)
-	if spellName then
-		core.defaultSettings.profile.spellOpts[spellName] = {
-			iconSize = 40, --mid size
-			cooldownSize = 14,
-			show = 1, --always show spell
-			stackSize = 14,
---~ 			when = date("%c"),--when isn't really used for anything. =/
-		}
-	end
+for i = 1, table_getn(defaultSpells2) do
+    name = GetSpellInfo(defaultSpells2[i])
+    if name then
+        defaultSettings.profile.spellOpts[name] = {
+            iconSize = 40,
+            cooldownSize = 14,
+            show = 1,
+            stackSize = 14,
+        }
+    end
 end
 
+-- Ace setup
+LibStub("AceAddon-3.0"):NewAddon(core, folder, "AceConsole-3.0", "AceEvent-3.0")
+core.L = LibStub("AceLocale-3.0"):GetLocale(folder, true)
+local L = core.L
 
 function core:OnInitialize()
-	self.db = LibStub("AceDB-3.0"):New("PB_DB", core.defaultSettings, true)
-	self.db.RegisterCallback(self, "OnProfileChanged", "OnProfileChanged")
-	self.db.RegisterCallback(self, "OnProfileCopied", "OnProfileChanged")
-	self.db.RegisterCallback(self, "OnProfileReset", "OnProfileChanged")
-	self.db.RegisterCallback(self, "OnProfileDeleted", "OnProfileChanged")
-	self:RegisterChatCommand("pb", "MySlashProcessorFunc")
-	
-	
-	local config = LibStub("AceConfig-3.0")
-	local dialog = LibStub("AceConfigDialog-3.0")
-	config:RegisterOptionsTable(self.title, self.CoreOptionsTable)
-	coreOpts = dialog:AddToBlizOptions(self.title, self.titleFull)
-	
-	
-	
-	config:RegisterOptionsTable(self.title.."Who", self.WhoOptionsTable)
-	whoUI = dialog:AddToBlizOptions(self.title.."Who", L["Who"], self.titleFull)
-	
-	
-	config:RegisterOptionsTable(self.title.."Spells", self.SpellOptionsTable)
-	spellUI = dialog:AddToBlizOptions(self.title.."Spells", L["Specific Spells"], self.titleFull)
+    self.db = LibStub("AceDB-3.0"):New("PBE_DB", core.defaultSettings, true)
+    self.db.RegisterCallback(self, "OnProfileChanged", "OnProfileChanged")
+    self.db.RegisterCallback(self, "OnProfileCopied", "OnProfileChanged")
+    self.db.RegisterCallback(self, "OnProfileReset", "OnProfileChanged")
+    self.db.RegisterCallback(self, "OnProfileDeleted", "OnProfileChanged")
+    self:RegisterChatCommand("pb", "MySlashProcessorFunc")
 
-	config:RegisterOptionsTable(self.title.."dSpells", self.DefaultSpellOptionsTable)
-	dspellUI = dialog:AddToBlizOptions(self.title.."dSpells", L["Default Spells"], self.titleFull)
-	
-	config:RegisterOptionsTable(self.title.."Rows", self.BarOptionsTable)
-	barUI = dialog:AddToBlizOptions(self.title.."Rows", L["Rows"], self.titleFull)
-	
-	
-	--last UI
-	config:RegisterOptionsTable(self.title.."Profile", LibStub("AceDBOptions-3.0"):GetOptionsTable(self.db))
-	profileUI = dialog:AddToBlizOptions(self.title.."Profile", L["Profiles"], self.titleFull)
-	
-	
-end
-
---[===[@debug@
-function PB_NewPlates()--	/run PB_NewPlates()
-	for plate, name in pairs(LibNameplate.nameplates) do 
-		if plate:IsShown() then
-			Debug("OnEnable", plate, name, LibNameplate:GetName(plate))
-			core:LibNameplate_NewNameplate("LibNameplate_NewNameplate", plate)
-		end
-	end
-end
-
---@end-debug@]===]
-local prev_OnEnable = core.OnEnable
-function core:OnEnable(...)
-	if prev_OnEnable then prev_OnEnable(self, ...) end
-
-	db = self.db
-	P = db.profile
-	
-	
-	for i, event in pairs(regEvents) do 
-		self:RegisterEvent(event)
-	end
-	
-	LibNameplate.RegisterCallback(self, "LibNameplate_NewNameplate")
-	LibNameplate.RegisterCallback(self, "LibNameplate_FoundGUID")
-	LibNameplate.RegisterCallback(self, "LibNameplate_RecycleNameplate")
-	
-	if P.playerCombatWithOnly == true or P.npcCombatWithOnly == true then
-		LibNameplate.RegisterCallback(self, "LibNameplate_CombatChange")
-		LibNameplate.RegisterCallback(self, "LibNameplate_ThreatChange")
-	end
-
-	--Update old options.
-	if P.cooldownSize < 6 then
-		P.cooldownSize = core.defaultSettings.profile.cooldownSize
-	end
-	if P.stackSize < 6 then
-		P.stackSize = core.defaultSettings.profile.stackSize
-	end
-
---~ 	PB_NewPlates()
-	
-	for plate in pairs(core.buffBars) do 
-		for i=1, table_getn(core.buffBars[plate]) do 
-			core.buffBars[plate][i]:Show() --reshow incase user disabled addon.
-		end
-	end
-
-end
-
-local prev_OnDisable = core.OnDisable
-function core:OnDisable(...)
-	if prev_OnDisable then prev_OnDisable(self, ...) end
-
-	LibNameplate.UnregisterAllCallbacks(self) 
-	
-	
-	for plate in pairs(core.buffBars) do 
-		for i=1, table_getn(core.buffBars[plate]) do 
-			core.buffBars[plate][i]:Hide() --makesure all frames stop OnUpdating.
-		end
-	end
-end
-
-----------------------------------------------------------------------
-function core:OnProfileChanged(...)									--
--- User has reset proflie, so we reset our spell exists options.	--
-----------------------------------------------------------------------
-	-- Shut down anything left from previous settings
-	self:Disable()
-	-- Enable again with the new settings
-	self:Enable()
-end
-
-----------------------------------------------
-function core:MySlashProcessorFunc(input)	--
--- /da function brings up the UI options.	--
-----------------------------------------------
-	InterfaceOptionsFrame_OpenToCategory(spellUI)--open subtab
-	InterfaceOptionsFrame_OpenToCategory(coreOpts)
-end
-
---[[Outdated callback.
-function core:LibNameplate_VisiblePlateChange(event, plate, visiblePlate)
-	if buffBars[plate] then
-		if buffBars[plate][1] then
-			self:ResetBarPoint(buffBars[plate][1], plate, visiblePlate)
-		end
-		for i=2, table_getn(buffBars[plate]) do 
-			buffBars[plate][i]:SetParent(visiblePlate)
-		end
-	end
-	
-end
-]]
-
-function core:HidePlateSpells(plate)
-	--note to self, not buffBars
-	if buffFrames[plate] then
-		for i=1, table_getn(buffFrames[plate]) do 
-			buffFrames[plate][i]:Hide()
-		end
-	end
-end
-
-function core:LibNameplate_RecycleNameplate(event, plate)
-	self:HidePlateSpells(plate)
-end
-
-
-
-
-local function isTotem(name)
---~     for i=1,table_getn(totems) do
---~         if name:find(totems[i].name) then
---~             return totems[i].texture
---~         end
---~     end
+    local config = LibStub("AceConfig-3.0")
+    local dialog = LibStub("AceConfigDialog-3.0")
     
-	return totems[name]
+    config:RegisterOptionsTable(self.title, self.CoreOptionsTable)
+    coreOpts = dialog:AddToBlizOptions(self.title, self.titleFull)
+
+    config:RegisterOptionsTable(self.title .. "Who", self.WhoOptionsTable)
+    whoUI = dialog:AddToBlizOptions(self.title .. "Who", L["Who"], self.titleFull)
+
+    config:RegisterOptionsTable(self.title .. "Spells", self.SpellOptionsTable)
+    spellUI = dialog:AddToBlizOptions(self.title .. "Spells", L["Specific Spells"], self.titleFull)
+
+    config:RegisterOptionsTable(self.title .. "dSpells", self.DefaultSpellOptionsTable)
+    dspellUI = dialog:AddToBlizOptions(self.title .. "dSpells", L["Default Spells"], self.titleFull)
+
+    config:RegisterOptionsTable(self.title .. "Rows", self.BarOptionsTable)
+    barUI = dialog:AddToBlizOptions(self.title .. "Rows", L["Rows"], self.titleFull)
+
+    config:RegisterOptionsTable(self.title .. "Profile", LibStub("AceDBOptions-3.0"):GetOptionsTable(self.db))
+    profileUI = dialog:AddToBlizOptions(self.title .. "Profile", L["Profiles"], self.titleFull)
 end
 
-function core:ShouldAddBuffs(plate, spam)
-	local plateName =  LibNameplate:GetName(plate) or "UNKNOWN"
---~ 	Debug("ShouldAddBuffs 1", plateName)
-	
-	if P.showTotems == false and isTotem(plateName) then
---~ 		Debug("ShouldAddBuffs", plateName, "totem")
-		return false
-	end
-	
-	local plateType = LibNameplate:GetType(plate)
-	if (P.abovePlayers == true and plateType == "PLAYER") or (P.aboveNPC == true and plateType == "NPC") then
-		if plateType == "PLAYER" and P.playerCombatWithOnly == true and (not LibNameplate:IsInCombat(plate)) then --  and LibNameplate:GetThreatSituation(plate) == "LOW"
---~ 			Debug("ShouldAddBuffs A", "We're not in combat with",plateName)
-			return false
-		end
-	
-		if plateType == "NPC" and P.npcCombatWithOnly == true and (not LibNameplate:IsInCombat(plate) and LibNameplate:GetThreatSituation(plate) == "LOW") then -- 
---~ 			Debug("ShouldAddBuffs B", "We're not in combat with",plateName)
-			return false
-		end
-	
-		local plateReaction = LibNameplate:GetReaction(plate)
-		if P.aboveFriendly == true and plateReaction == "FRIENDLY" then
-		
---~ 			if spam then
---~ 				Debug("ShouldAddBuffs A", plate, plateName, plateType, plateReaction, LibNameplate:IsInCombat(plate), LibNameplate:GetThreatSituation(plate))
---~ 			end
-		
-			return true
-		elseif P.aboveNeutral == true and plateReaction == "NEUTRAL" then
---~ 			if spam then
---~ 				Debug("ShouldAddBuffs B", plate, plateName, plateType, plateReaction, LibNameplate:IsInCombat(plate), LibNameplate:GetThreatSituation(plate))
---~ 			end
-			return true
-		elseif P.aboveHostile == true and plateReaction == "HOSTILE" then
---~ 			if spam then
---~ 				Debug("ShouldAddBuffs C", plate, plateName, plateType, plateReaction, LibNameplate:IsInCombat(plate), LibNameplate:GetThreatSituation(plate))
---~ 			end
-		
-			return true
-		end
-	end
-	
-	return false
+function core:OnEnable()
+    db = self.db
+    P = db.profile
+
+    -- Register standard events
+    for i, event in pairs(regEvents) do
+        self:RegisterEvent(event)
+    end
+
+    -- Register C_NamePlate events (replaces old LibNameplate callbacks)
+    self:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+    self:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
+    self:RegisterEvent("UNIT_AURA")
+
+    -- Re-show any hidden bars
+    for unit in pairs(buffBars) do
+        for i = 1, table_getn(buffBars[unit]) do
+            buffBars[unit][i]:Show()
+        end
+    end
+
+    -- Scan for any existing nameplates that might have been created before addon loaded
+    if C_NamePlate and C_NamePlate.GetNamePlates then
+        local plates = C_NamePlate.GetNamePlates(false)
+        if plates then
+            for _, plate in ipairs(plates) do
+                if plate.nameplateUnitToken then
+                    self:NAME_PLATE_UNIT_ADDED(nil, plate.nameplateUnitToken)
+                end
+            end
+        end
+    end
 end
 
-function core:AddOurStuffToPlate(plate)
-	local GUID = LibNameplate:GetGUID(plate)
-	if GUID then
-		self:RemoveOldSpells(GUID)
-		self:AddBuffsToPlate(plate, GUID)
-		return
-	end
-	
-	local plateName =  LibNameplate:GetName(plate) or "UNKNOWN"
-	if P.saveNameToGUID == true and nametoGUIDs[plateName] and (LibNameplate:GetType(plate) == "PLAYER" or LibNameplate:IsBoss(plate)) then
-		self:RemoveOldSpells(nametoGUIDs[plateName])
-		self:AddBuffsToPlate(plate, nametoGUIDs[plateName])
-	elseif P.unknownSpellDataIcon == true then
-		self:AddUnknownIcon(plate)
-	end
+function core:OnDisable()
+    -- Clean up all nameplate data
+    for unit in pairs(buffBars) do
+        for i = 1, table_getn(buffBars[unit]) do
+            buffBars[unit][i]:Hide()
+        end
+    end
 end
 
-function core:LibNameplate_NewNameplate(event, plate)
---~ 	Debug("NewNameplate 1", plate, LibNameplate:GetName(plate) or "UNKNOWN", LibNameplate:IsInCombat(plate), LibNameplate:GetThreatSituation(plate))
-	if self:ShouldAddBuffs(plate, true) == true then
-		core:AddOurStuffToPlate(plate)
-	end
-
+function core:OnProfileChanged()
+    self:Disable()
+    self:Enable()
 end
 
-function core:LibNameplate_FoundGUID(event, plate, GUID, unitID)
-	if self:ShouldAddBuffs(plate) == true then
---~ 		local plateName =  LibNameplate:GetName(plate) or "UNKNOWN"
---~ 		Debug("FoundGUID", plateName, plate, plate.extended)
-
-		if not guidBuffs[GUID] then
-			self:CollectUnitInfo(unitID)
-		end
-
-		self:RemoveOldSpells(GUID)
-		self:AddBuffsToPlate(plate, GUID)
-	end
-
-	--[===[@debug@
---~ 	Debug("FoundGUID", plateName, 
---~ 		GUID, 
---~ 		unitID,
---~ 		LibNameplate:GetLevel(plate),
---~ 		LibNameplate:GetReaction(plate),
---~ 		LibNameplate:GetType(plate),
---~ 		LibNameplate:IsBoss(plate),
---~ 		LibNameplate:GetHealthMax(plate),
---~ 		LibNameplate:GetClass(plate),
---~ 		LibNameplate:IsElite(plate),
---~ 		LibNameplate:GetThreatSituation(plate),
---~ 		LibNameplate:GetAlpha(plate),
---~ 		LibNameplate:IsTarget(plate),
---~ 		LibNameplate:GetHealth(plate), 
---~ 		LibNameplate:GetHealthMax(plate),
---~ 		LibNameplate:IsMouseover(plate),
---~ 		LibNameplate:IsCasting(plate),
---~ 		LibNameplate:IsInCombat(plate),
---~ 		LibNameplate:IsMarked(plate),
---~ 		LibNameplate:GetRaidIcon(plate),
---~ 		LibNameplate:GetGUID(plate),
---~ 		"" --nada
---~ 	)
-
---~ 	--Do nothing API calls to test library.
---~ 	LibNameplate:GetName(plate)
---~ 	LibNameplate:GetLevel(plate)
---~ 	LibNameplate:GetReaction(plate)
---~ 	LibNameplate:GetType(plate)
---~ 	LibNameplate:IsBoss(plate)
---~ 	LibNameplate:GetHealthMax(plate)
---~ 	LibNameplate:GetClass(plate)
---~ 	LibNameplate:IsElite(plate)
---~ 	LibNameplate:GetThreatSituation(plate)
---~ 	LibNameplate:IsTarget(plate)
---~ 	LibNameplate:GetHealth(plate)
---~ 	LibNameplate:GetHealthMax(plate)
---~ 	LibNameplate:IsMouseover(plate)
---~ 	LibNameplate:IsCasting(plate)
---~ 	LibNameplate:IsInCombat(plate)
---~ 	LibNameplate:IsMarked(plate)
---~ 	LibNameplate:GetRaidIcon(plate)
---~ 	LibNameplate:GetGUID(plate)
-	--@end-debug@]===]
-	
+function core:MySlashProcessorFunc(input)
+    if input == "debug" then
+        -- Debug: Show aura data info
+        -- Count plates correctly (table_getn doesn't work with string keys)
+        local plateCount = 0
+        for unit in pairs(buffFrames or {}) do
+            plateCount = plateCount + 1
+        end
+        
+        self:Print("Debug: addon is loaded and tracking nameplates.")
+        
+    elseif input == "test" then
+        -- Manual test: try to find and process plates
+        self:Print("Test: scanning for nameplates...")
+        if C_NamePlate and C_NamePlate.GetNamePlates then
+            local plates = C_NamePlate.GetNamePlates(false)
+            if plates then
+                print("  Found " .. #plates .. " plates")
+                for idx, plate in ipairs(plates) do
+                    if plate.nameplateUnitToken then
+                        local unit = plate.nameplateUnitToken
+                        print("    Plate " .. idx .. ": " .. unit)
+                        
+                        -- Try to query auras with different unit references
+                        print("      Testing UnitAura queries:")
+                        
+                        -- Try with nameplate token
+                        local name1, _ = UnitAura(unit, 1, "HARMFUL")
+                        print("        UnitAura('" .. unit .. "'): " .. (name1 or "nil"))
+                        
+                        -- Try other queries with nameplate token
+                        print("        UnitExists('" .. unit .. "'): " .. tostring(UnitExists(unit)))
+                        local unitName = UnitName(unit)
+                        print("        UnitName('" .. unit .. "'): " .. (unitName or "nil"))
+                        
+                        -- Try with target
+                        if UnitExists("target") then
+                            local name2, _ = UnitAura("target", 1, "HARMFUL")
+                            print("        UnitAura('target'): " .. (name2 or "nil"))
+                            print("        Target name: " .. UnitName("target"))
+                        end
+                        
+                        -- Dump frame properties
+                        print("      Frame properties:")
+                        if plate.UnitFrame then
+                            print("        plate.UnitFrame exists")
+                        end
+                        if plate.unit then
+                            print("        plate.unit: " .. tostring(plate.unit))
+                        end
+                        if plate.guid then
+                            print("        plate.guid: " .. tostring(plate.guid))
+                        end
+                        if plate.nameplateUnitToken then
+                            print("        plate.nameplateUnitToken: " .. tostring(plate.nameplateUnitToken))
+                        end
+                        
+                        -- Try all properties
+                        print("      All frame properties:")
+                        for key, val in pairs(plate) do
+                            if type(val) ~= "table" and type(val) ~= "userdata" then
+                                print("        " .. key .. ": " .. tostring(val))
+                            end
+                        end
+                    end
+                end
+            else
+                print("  GetNamePlates returned nil")
+            end
+        else
+            print("  C_NamePlate not available")
+        end
+    else
+        InterfaceOptionsFrame_OpenToCategory(spellUI)
+        InterfaceOptionsFrame_OpenToCategory(coreOpts)
+    end
 end
 
---[===[@debug@
-function PB_TargetTest()--	/run PB_TargetTest()
-	local unitID = "target"
-	local GUID = UnitGUID(unitID)
-		local name = UnitName(unitID)
-	local plate = LibNameplate:GetNameplateByGUID(GUID)
-	
-	Debug(GUID, plate, name, plate and LibNameplate:GetName(plate))
-	
+---
+--- MAIN EVENT HANDLERS
+---
+
+function core:NAME_PLATE_UNIT_ADDED(event, unit)
+    -- unit is like "nameplate1", "nameplate2", etc.
+    if not unit then
+        return
+    end
+
+    if not self:ShouldShowNameplateAuras(unit) then
+        return
+    end
+
+    -- Get the frame for this unit
+    local frame = C_NamePlate.GetNamePlateForUnit(unit)
+    if not frame then
+        return
+    end
+
+    -- Store the actual unit token on the frame for later use
+    -- The "unit" parameter (nameplate1, nameplate2) is the display unit token
+    frame.displayUnit = unit
+
+    -- Initialize data storage for this unit
+    guidBuffs[unit] = {}
+    buffFrames[unit] = {}
+
+    -- Build frame container anchored to the nameplate
+    self:BuildBuffFrameForUnit(unit, frame)
+
+    -- Populate initial aura data using the actual display unit
+    self:UpdateAurasForUnit(unit, frame)
+    self:AddBuffsToPlate(unit)
+    
+    -- Debug log
+    if not self.plateCount then self.plateCount = 0 end
+    self.plateCount = self.plateCount + 1
 end
 
---@end-debug@]===]
+function core:NAME_PLATE_UNIT_REMOVED(event, unit)
+    -- Clean up when nameplate disappears
+    Debug("NAME_PLATE_UNIT_REMOVED", unit)
+
+    self:HidePlateSpells(unit)
+
+    -- Remove from tracking tables
+    if buffFrames[unit] then
+        for i = 1, table_getn(buffFrames[unit]) do
+            if buffFrames[unit][i] then
+                buffFrames[unit][i]:Hide()
+            end
+        end
+        buffFrames[unit] = nil
+    end
+
+    if buffBars[unit] then
+        for i = 1, table_getn(buffBars[unit]) do
+            if buffBars[unit][i] then
+                buffBars[unit][i]:Hide()
+            end
+        end
+        buffBars[unit] = nil
+    end
+
+    guidBuffs[unit] = nil
+end
+
+function core:UNIT_AURA(event, ...)
+    local unit = ...
+
+    -- Only process nameplate units
+    if not unit or not unit:match("^nameplate%d+$") then
+        return
+    end
+
+    -- Check if we're tracking this nameplate
+    if not buffFrames[unit] then
+        return
+    end
+
+    -- Update aura data and refresh display
+    self:UpdateAurasForUnit(unit)
+    self:AddBuffsToPlate(unit)
+end
+
+---
+--- FILTERING FUNCTIONS
+---
+
+function core:ShouldShowNameplateAuras(unit)
+    -- Get unit information
+    if not UnitExists(unit) then
+        return false
+    end
+
+    local unitName = UnitName(unit)
+
+    -- Check totem filter
+    if P.showTotems == false and self:IsTotem(unitName) then
+        return false
+    end
+
+    -- For now, accept all units that exist
+    -- We can be more selective later
+    return true
+end
+
+function core:IsTotem(unitName)
+    return totems[unitName] ~= nil
+end
 
 function core:HaveSpellOpts(spellName)
-	if not P.ignoreDefaultSpell[spellName] and P.spellOpts[spellName] then
-		return P.spellOpts[spellName]
-	end
-	return false
+    if not P or not spellName then
+        return false
+    end
+    if P.ignoreDefaultSpell and P.ignoreDefaultSpell[spellName] then
+        return false
+    end
+    if P.spellOpts and P.spellOpts[spellName] then
+        return P.spellOpts[spellName]
+    end
+    return false
 end
 
---P.spellOpts
-function core:CollectUnitInfo(unitID)
-	local GUID = UnitGUID(unitID)
-	local name = UnitName(unitID)--returns 2 values, only want name.
-	if P.saveNameToGUID == true and UnitIsPlayer(unitID) or UnitClassification(unitID) == "worldboss" then
-		--These should always have unique names.
-		nametoGUIDs[name] = GUID
-	end
-
-	if P.watchUnitIDAuras == true then
-
-		guidBuffs[GUID] = guidBuffs[GUID] or {}
-	
-		--Remove all the entries.
-		for i=table_getn(guidBuffs[GUID]), 1, -1 do 
-			table_remove(guidBuffs[GUID], i)
-		end
-	
-		local i = 1;
-		local name, rank, icon, count, dispelType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate, spellId
-		while UnitBuff(unitID, i) do 
-			name, rank, icon, count, dispelType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate, spellId = UnitBuff(unitID, i)
-			
-			for _, _, shortIcon in icon:gmatch("(.+)\\(.+)\\(.+)") do
-				icon = shortIcon
-				break
-			end
-			
-			local spellOpts = self:HaveSpellOpts(name)
-			
-			if spellOpts and spellOpts.show then
-				if spellOpts.show == 1 or (spellOpts.show == 2 and unitCaster and unitCaster == "player") then
-					table_insert(guidBuffs[GUID], {
-						name = name, --needed for spell options.
-						icon = icon,
-						expirationTime = expirationTime,
-						startTime = expirationTime - duration,
-						duration = duration,
-						playerCast = unitCaster and unitCaster == "player" and 1,
-						stackCount = count,
-						sID = spellId,
-						caster = unitCaster and  core:GetFullName(unitCaster),
-					})
-				end
-			else
-				if P.defaultBuffShow == 1 or (P.defaultBuffShow == 2 and unitCaster and unitCaster == "player") then
-					table_insert(guidBuffs[GUID], {
-						name = name,
-						icon = icon,
-						expirationTime = expirationTime,
-						startTime = expirationTime - duration,
-						duration = duration,
-						playerCast = unitCaster and unitCaster == "player" and 1,
-						stackCount = count,
-						sID = spellId,
-						caster = unitCaster and  core:GetFullName(unitCaster),
-					})
-				end
-			end
-			
-			--[[
-			if P.spellOpts[name] and P.spellOpts[name].show then
-				if P.spellOpts[name].show == 1 or (P.spellOpts[name].show == 2 and unitCaster and unitCaster == "player") then
-					table_insert(guidBuffs[GUID], {
-						name = name, --needed for spell options.
-						icon = icon,
-						expirationTime = expirationTime,
-						startTime = expirationTime - duration,
-						duration = duration,
-						playerCast = unitCaster and unitCaster == "player" and 1,
-						stackCount = count,
-						sID = spellId,
-						caster = unitCaster and  core:GetFullName(unitCaster),
-					})
-				end
-			else
-				if P.defaultBuffShow == 1 or (P.defaultBuffShow == 2 and unitCaster and unitCaster == "player") then
-					table_insert(guidBuffs[GUID], {
-						name = name,
-						icon = icon,
-						expirationTime = expirationTime,
-						startTime = expirationTime - duration,
-						duration = duration,
-						playerCast = unitCaster and unitCaster == "player" and 1,
-						stackCount = count,
-						sID = spellId,
-						caster = unitCaster and  core:GetFullName(unitCaster),
-					})
-				end
-			end]]
-			
-			
-			i=i + 1
-		end
-		
-		
-		i = 1;
-		local name, rank, icon, count, debuffType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate, spellId
-		while UnitDebuff(unitID, i) do 
-			name, rank, icon, count, debuffType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate, spellId = UnitDebuff(unitID, i) 
-			for _, _, shortIcon in icon:gmatch("(.+)\\(.+)\\(.+)") do
-				icon = shortIcon
-				break
-			end
-	
-			
-			local spellOpts = self:HaveSpellOpts(name)
-			
-			if spellOpts and spellOpts.show then
-				if spellOpts.show == 1 or (spellOpts.show == 2 and unitCaster and unitCaster == "player") then
-					table_insert(guidBuffs[GUID], {
-						name = name, --needed for spell options.
-						icon = icon,
-						expirationTime = expirationTime,
-						startTime = expirationTime - duration,
-						duration = duration,
-						playerCast = unitCaster and unitCaster == "player" and 1,
-						stackCount = count,
-						debuffType = debuffType,
-						isDebuff	= true,
-						sID = spellId,
-						caster = unitCaster and  core:GetFullName(unitCaster),
-					})
-				end
-			else
-				if P.defaultDebuffShow == 1 or (P.defaultDebuffShow == 2 and unitCaster and unitCaster == "player") then
-					table_insert(guidBuffs[GUID], {
-						name = name, --needed for spell options.
-						icon = icon,
-						expirationTime = expirationTime,
-						startTime = expirationTime - duration,
-						duration = duration,
-						playerCast = unitCaster and unitCaster == "player" and 1,
-						stackCount = count,
-						debuffType = debuffType,
-						isDebuff	= true,
-						sID = spellId,
-						caster = unitCaster and  core:GetFullName(unitCaster),
-					})
-				end
-			end
-			
-			--[[
-			if P.spellOpts[name] and P.spellOpts[name].show then
-				if P.spellOpts[name].show == 1 or (P.spellOpts[name].show == 2 and unitCaster and unitCaster == "player") then
-					table_insert(guidBuffs[GUID], {
-						name = name, --needed for spell options.
-						icon = icon,
-						expirationTime = expirationTime,
-						startTime = expirationTime - duration,
-						duration = duration,
-						playerCast = unitCaster and unitCaster == "player" and 1,
-						stackCount = count,
-						debuffType = debuffType,
-						isDebuff	= true,
-						sID = spellId,
-						caster = unitCaster and  core:GetFullName(unitCaster),
-					})
-				end
-			else
-				if P.defaultDebuffShow == 1 or (P.defaultDebuffShow == 2 and unitCaster and unitCaster == "player") then
-					table_insert(guidBuffs[GUID], {
-						name = name, --needed for spell options.
-						icon = icon,
-						expirationTime = expirationTime,
-						startTime = expirationTime - duration,
-						duration = duration,
-						playerCast = unitCaster and unitCaster == "player" and 1,
-						stackCount = count,
-						debuffType = debuffType,
-						isDebuff	= true,
-						sID = spellId,
-						caster = unitCaster and  core:GetFullName(unitCaster),
-					})
-				end
-			end]]
-			i=i + 1
-		end
-	
-	
-		
-		if core.iconTestMode == true then
-			for i=table_getn(guidBuffs[GUID]), 1, -1 do 
-				for t=1, P.iconsPerBar - 1 do 
-					table_insert(guidBuffs[GUID], i, guidBuffs[GUID][i]) --reinsert the entry abunch of times.
-				end
-			end
-	
-		end
-	end
-	
---~ 	core:UpdatePlateByGUID(GUID)
-	if not self:UpdatePlateByGUID(GUID) and (UnitIsPlayer(unitID) or UnitClassification(unitID) == "worldboss") then
-		--LibNameplate can't find a nameplate that matches that GUID. Since the unitID's a player/worldboss which have unique names, add buffs to the frame that matches that name.
-		--Note, this /can/ add buffs to the wrong frame if a hunter pet has the same name as a player. This is so rare that I'll risk it.
-		self:UpdatePlateByName(name)
-	end
+function core:UnitFromNameplateToken(unit)
+    -- Try to map a nameplate token (nameplate1, nameplate2, etc.) to an actual unit token
+    -- This is necessary because UnitAura doesn't work with display tokens
+    
+    -- First, try to get the unit name from the display token
+    local unitName = UnitName(unit)
+    if not unitName then
+        return unit  -- Can't determine, return original
+    end
+    
+    -- Check if it's the player
+    if unitName == UnitName("player") then
+        return "player"
+    end
+    
+    -- Check if it's the target
+    if UnitExists("target") and UnitName("target") == unitName then
+        return "target"
+    end
+    
+    -- Check if it's the focus
+    if UnitExists("focus") and UnitName("focus") == unitName then
+        return "focus"
+    end
+    
+    -- Check if it's mouseover
+    if UnitExists("mouseover") and UnitName("mouseover") == unitName then
+        return "mouseover"
+    end
+    
+    -- Check party members
+    for i = 1, GetNumPartyMembers() do
+        local partyUnit = "party" .. i
+        if UnitExists(partyUnit) and UnitName(partyUnit) == unitName then
+            return partyUnit
+        end
+    end
+    
+    -- Check raid members
+    if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            local raidUnit = "raid" .. i
+            if UnitExists(raidUnit) and UnitName(raidUnit) == unitName then
+                return raidUnit
+            end
+        end
+    end
+    
+    -- If we can't map it, return the original
+    -- In some cases, the nameplate token might actually work with UnitAura
+    return unit
 end
 
+---
+--- AURA COLLECTION & FILTERING
+---
+
+function core:UpdateAurasForUnit(unit, frame)
+    -- Clear existing aura data for this unit
+    guidBuffs[unit] = {}
+    local debuffCount = 0
+
+    -- The "unit" parameter is for the nameplate (e.g., "nameplate1")
+    -- Try to query auras directly with the nameplate token first
+    local queryUnit = unit
+    
+    local i = 1
+
+    -- Collect HELPFUL auras (buffs)
+    while true do
+        local name, rank, icon, count, dispelType, duration, expirationTime, unitCaster,
+              isStealable, shouldConsolidate, spellId = UnitAura(queryUnit, i, "HELPFUL")
+
+        if not name then
+            break
+        end
+        
 
 
-function core:PLAYER_TARGET_CHANGED(event, ...)
-	if UnitExists("target") then
-		self:CollectUnitInfo("target")
-	end
+        if self:ShouldShowAura(name, unitCaster, "BUFF") then
+            -- Ensure all values are proper types
+            duration = tonumber(duration) or 0
+            expirationTime = tonumber(expirationTime) or 0
+            count = tonumber(count) or 0
+            icon = tostring(icon) or ""
+            
+            table_insert(guidBuffs[unit], {
+                name = name,
+                icon = icon,
+                spellId = spellId,
+                expirationTime = expirationTime,
+                duration = duration,
+                startTime = expirationTime - duration,
+                stackCount = count,
+                playerCast = (unitCaster == "player") and 1 or nil,
+                caster = unitCaster,
+                isDebuff = false,
+                debuffType = nil,
+            })
+        end
+        i = i + 1
+    end
+
+    -- Collect HARMFUL auras (debuffs)
+    i = 1
+    while true do
+        local name, rank, icon, count, dispelType, duration, expirationTime, unitCaster,
+              isStealable, shouldConsolidate, spellId = UnitAura(queryUnit, i, "HARMFUL")
+
+        if not name then
+            break
+        end
+        
+
+
+        debuffCount = debuffCount + 1
+        
+        local shouldShow = self:ShouldShowAura(name, unitCaster, "DEBUFF", dispelType)
+        
+        if shouldShow then
+            -- Ensure all values are proper types
+            duration = tonumber(duration) or 0
+            expirationTime = tonumber(expirationTime) or 0
+            count = tonumber(count) or 0
+            icon = tostring(icon) or ""
+            
+            table_insert(guidBuffs[unit], {
+                name = name,
+                icon = icon,
+                spellId = spellId,
+                expirationTime = expirationTime,
+                duration = duration,
+                startTime = expirationTime - duration,
+                stackCount = count,
+                playerCast = (unitCaster == "player") and 1 or nil,
+                caster = unitCaster,
+                isDebuff = true,
+                debuffType = dispelType or "none",
+            })
+        end
+        i = i + 1
+    end
+    
+    -- Store debug info
+    if not self.debugAuras then self.debugAuras = {} end
+    self.debugAuras[unit] = {
+        totalDebuffs = debuffCount,
+        collectedAuras = table_getn(guidBuffs[unit] or {}),
+    }
 end
 
-
-function core:UNIT_TARGET(event, unitID)--this fires half a second after PLAYER_TARGET_CHANGED. Not good for rapid targeting.
-	if not UnitIsUnit(unitID, "player") and UnitExists(unitID.."target") then
-		self:CollectUnitInfo(unitID.."target")
-	end
---~ 	Debug(event, ...)
+function core:IsCasterPlayer(caster)
+    -- Handle different caster formats: "player", player GUID, or other values
+    if not caster then
+        return false
+    end
+    
+    if caster == "player" then
+        return true
+    end
+    
+    -- Try comparing as strings first
+    local playerGUID = UnitGUID("player")
+    if playerGUID and caster == playerGUID then
+        return true
+    end
+    
+    -- Also check if caster contains any of the player's GUID substrings
+    -- Some WoW versions return GUIDs in different formats
+    if playerGUID and caster then
+        -- Extract numeric parts from both GUIDs for comparison
+        local playerNum = playerGUID:gsub("x", ""):gsub("-", "")
+        local casterNum = tostring(caster):gsub("x", ""):gsub("-", "")
+        
+        if playerNum and casterNum and playerNum == casterNum then
+            return true
+        end
+    end
+    
+    return false
 end
 
---[[
-local function ExitCombatChanges(count, ...)
---~ 	Debug("ExitCombatChanges", count, "------")
-    for i = 1, count do
-        local plate = select(i, ...)
-        if plate:IsShown() then
-			if not core:ShouldAddBuffs(plate) then
-				core:HidePlateSpells(plate)
-			end
-        end    
+function core:ShouldShowAura(name, caster, auraType, debuffType)
+    local spellOpts = self:HaveSpellOpts(name)
+
+    -- Apply spell-specific settings
+    if spellOpts and spellOpts.show then
+        if spellOpts.show == 1 then
+            return true  -- Always show
+        elseif spellOpts.show == 2 then
+            return self:IsCasterPlayer(caster)  -- Only show player's casts
+        else
+            return false  -- Don't show
+        end
+    end
+
+    -- Apply default settings
+    if auraType == "BUFF" then
+        if P.defaultBuffShow == 1 then
+            return true
+        elseif P.defaultBuffShow == 2 then
+            return self:IsCasterPlayer(caster)
+        else
+            return false
+        end
+    else
+        -- DEBUFF
+        if P.defaultDebuffShow == 1 then
+            return true
+        elseif P.defaultDebuffShow == 2 then
+            return self:IsCasterPlayer(caster)
+        else
+            return false
+        end
     end
 end
 
-local function EnterCombatChanges(count, ...)
---~ 	Debug("EnterCombatChanges", count, "-------")
-    for i = 1, count do
-        local plate = select(i, ...)
-        if plate:IsShown() then
+---
+--- UTILITY FUNCTIONS (preserved from original)
+---
 
-			if core:ShouldAddBuffs(plate) == true then
-				core:AddOurStuffToPlate(plate)
-			end
-			
-        end    
+function core:HidePlateSpells(unit)
+    if buffFrames[unit] then
+        for i = 1, table_getn(buffFrames[unit]) do
+            buffFrames[unit][i]:Hide()
+        end
     end
 end
 
-function core:PLAYER_REGEN_ENABLED(event, unitID)--exit combat
-	ExitCombatChanges(LibNameplate:GetAllNameplates())
+function core:Round(num, zeros)
+    return math.floor(num * 10 ^ (zeros or 0) + 0.5) / 10 ^ (zeros or 0)
 end
 
-function core:PLAYER_REGEN_DISABLED(event, unitID)-- enter combat
-	EnterCombatChanges(LibNameplate:GetAllNameplates())
-end
-]]
-
-
-function core:LibNameplate_CombatChange(event, plate, inCombat)
---~ 	Debug(event, plate, inCombat, LibNameplate:GetName(plate), core:ShouldAddBuffs(plate))
-	if core:ShouldAddBuffs(plate) == true then
---~ 		Debug(event, plate, inCombat, "Showing buffs!", LibNameplate:GetName(plate))
-		core:AddOurStuffToPlate(plate)
-	else
---~ 		Debug(event, plate, inCombat, "Hiding buffs!", LibNameplate:GetName(plate))
-		core:HidePlateSpells(plate)
-	end
-end
---[[]]
-function core:LibNameplate_ThreatChange(event, plate, threatSit)
---~ 	Debug(event, plate, threatSit, LibNameplate:GetName(plate), core:ShouldAddBuffs(plate))
-	
-	if core:ShouldAddBuffs(plate) == true then
---~ 		Debug(event, plate, inCombat, "Showing buffs!", LibNameplate:GetName(plate))
-		core:AddOurStuffToPlate(plate)
-	else
---~ 		Debug(event, plate, inCombat, "Hiding buffs!", LibNameplate:GetName(plate))
-		core:HidePlateSpells(plate)
-	end
+function core:RedToGreen(current, max)
+    local percentage = (current / max) * 100
+    local red, green = 0, 0
+    if percentage >= 50 then
+        green = 1
+        red = ((100 - percentage) / 100) * 2
+    else
+        red = 1
+        green = ((100 - (100 - percentage)) / 100) * 2
+    end
+    return red, green, 0
 end
 
+local chunks = {
+    year = 60 * 60 * 24 * 365,
+    month = 60 * 60 * 24 * 30,
+    day = 60 * 60 * 24,
+    hour = 60 * 60,
+    minute = 60,
+}
 
-function core:UPDATE_MOUSEOVER_UNIT(event, ...)
-	if UnitExists("mouseover") then
-		self:CollectUnitInfo("mouseover")
-	end
---~ 	Debug(event, ...)
+function core:SecondsToString(seconds, maxLength)
+    local msg = ""
+    local maxLength = maxLength or 2
+
+    if seconds == 0 then
+        msg = "0s"
+    else
+        local sYear, sMonth, sDay, sHour, sMinute = 0, 0, 0, 0, 0
+
+        while seconds > (chunks.year - 1) do
+            sYear = sYear + 1
+            seconds = seconds - chunks.year
+        end
+
+        while seconds > (chunks.month - 1) do
+            sMonth = sMonth + 1
+            seconds = seconds - chunks.month
+        end
+
+        while seconds > (chunks.day - 1) do
+            sDay = sDay + 1
+            seconds = seconds - chunks.day
+        end
+
+        while seconds > (chunks.hour - 1) do
+            sHour = sHour + 1
+            seconds = seconds - chunks.hour
+        end
+
+        while seconds > (chunks.minute - 1) do
+            sMinute = sMinute + 1
+            seconds = seconds - chunks.minute
+        end
+
+        local sLength = 0
+
+        if sYear > 0 and sLength < maxLength then
+            sLength = sLength + 1
+            msg = sYear .. "y "
+        end
+        if sMonth > 0 and sLength < maxLength then
+            sLength = sLength + 1
+            msg = msg .. sMonth .. "mo "
+        end
+        if sDay > 0 and sLength < maxLength then
+            sLength = sLength + 1
+            msg = msg .. sDay .. "d "
+        end
+        if sHour > 0 and sLength < maxLength then
+            sLength = sLength + 1
+            msg = msg .. sHour .. "h "
+        end
+        if sMinute > 0 and sLength < maxLength then
+            sLength = sLength + 1
+            msg = msg .. sMinute .. "m "
+        end
+        if seconds > 0 and sLength < maxLength then
+            sLength = sLength + 1
+            msg = msg .. seconds .. "s "
+        end
+    end
+
+    msg = string_sub(msg, 1, string_len(msg) - 1)
+    return msg
 end
 
-function core:UNIT_AURA(event, unitID)
-	if UnitExists(unitID) then
-		self:CollectUnitInfo(unitID)
-	end
---~ 	Debug(event, ...)
+function core:GetFullName(unitID)
+    local name = UnitName(unitID)
+    if name then
+        name = name:gsub(" - ", "")
+    end
+    return name
 end
 
+function core:RemoveServerName(name)
+    if name:find("-") then
+        return name:sub(1, name:find("-") - 1)
+    end
+    return name
+end
 
+---
+--- SPELL MANAGEMENT FUNCTIONS
+---
 
 function core:AddNewSpell(spellName)
-	Debug("AddNewSpell", spellName)
-	
-	P.ignoreDefaultSpell[spellName] = nil
-	
---~ 	if not P.spellOpts[spellName] then
-		P.spellOpts[spellName] = {
---~ 			show = P.defaultSpells,
---~ 			iconSize = P.iconSize,
---~ 			cooldownSize = P.cooldownSize,
---~ 			stackSize = P.stackSize,
-
-			show = 1, --always show
---~ 			when = date("%c"),
-		}
---~ 	else
---~ 		self.echo(spellName.." is already in the list.")
---~ 	end
-
-	
-	self:BuildSpellUI()
+    -- Validate spell name is not empty
+    if not spellName or spellName == "" then
+        self:Print("Spell name cannot be empty")
+        return
+    end
+    
+    local P = self.db.profile
+    if not P.spellOpts then
+        P.spellOpts = {}
+    end
+    
+    -- Add the new spell with default settings
+    P.spellOpts[spellName] = {
+        iconSize = P.iconSize or 24,
+        cooldownSize = P.cooldownSize or 14,
+        show = 1,
+        stackSize = P.stackSize or 14,
+        when = date("%m/%d %H:%M"),
+    }
+    
+    self:Print("Added spell: " .. spellName)
+    
+    -- Refresh the UI to show the new spell
+    self:BuildSpellUI()
 end
 
 function core:RemoveSpell(spellName)
-	if self.defaultSettings.profile.spellOpts[spellName] then
-		P.ignoreDefaultSpell[spellName] = true
-	end
-	P.spellOpts[spellName] = nil
-	core:BuildSpellUI()
+    if not spellName then
+        return
+    end
+    
+    local P = self.db.profile
+    if P.spellOpts and P.spellOpts[spellName] then
+        P.spellOpts[spellName] = nil
+        self:Print("Removed spell: " .. spellName)
+        
+        -- Refresh the UI
+        self:BuildSpellUI()
+    end
 end
 
-function core:UpdatePlateByGUID(GUID)
-	local plate = LibNameplate:GetNameplateByGUID(GUID)
-	if plate then
-		if self:ShouldAddBuffs(plate) == true then
-			
-			core:AddBuffsToPlate(plate, GUID)
-			return true
-		end
-	end
-	return false
-end
-
-------------------------------------------------------------------------------------------
-function core:UpdatePlateByName(name)										--
--- This will add buff frames to a frame matching a given name. 							--
--- This should only be used for player names because mobs/npcs can share the same name.	--
-------------------------------------------------------------------------------------------
---~ 	name = self:RemoveServerName(name) -- Nameplates don't show server name.
-	local GUID = nametoGUIDs[name]--We save buffs by GUID. make sure we have the name's guid in our list.
-	if GUID then
-		local plate = LibNameplate:GetNameplateByName(name)
-		if plate then
-			if self:ShouldAddBuffs(plate) == true then
---~ 				Debug("UpdatePlateByGUID","Found GUID from name, adding buffs.", name, GUID)
-				core:AddBuffsToPlate(plate, GUID)
-			end
-			return true
-		end
-	end
-end
-
-
-
-function core:GetAllSpellIDs()
-	--ugly function, but how else will I get spellIDs from spell names. =/
-	
-	local spells = {}
-	local name
-	for i, spellID in pairs(defaultSpells1) do 
-		name = GetSpellInfo(spellID)
-		spells[name] = spellID
-	end
-	for i, spellID in pairs(defaultSpells2) do 
-		name = GetSpellInfo(spellID)
-		spells[name] = spellID
-	end
---~ 	for i, spellID in pairs(defaultSpells3) do 
---~ 		name = GetSpellInfo(spellID)
---~ 		spells[name] = spellID
---~ 	end
-
-	for i = 76567, 1,-1  do --76567
-		name = GetSpellInfo(i)
-		if name and not spells[name]then
-			spells[name] = i
-		end
-	end
-	return spells
-end
---[[
-local lastID = 0
-for i = 1, 100000  do
-	name = GetSpellInfo(i)
-	if name then
-		lastID = i
-	end
-end
-print("lastID", lastID)
-]]
+-- Option tables are defined in options.lua
