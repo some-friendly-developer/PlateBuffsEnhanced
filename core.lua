@@ -400,8 +400,52 @@ function core:ShouldShowNameplateAuras(unit)
         return false
     end
 
-    -- For now, accept all units that exist
-    -- We can be more selective later
+    -- Check TYPE filters (Players vs NPCs)
+    local isPlayer = UnitIsPlayer(unit)
+    
+    if isPlayer then
+        if P.abovePlayers ~= true then
+            return false
+        end
+    else
+        if P.aboveNPC ~= true then
+            return false
+        end
+    end
+
+    -- Check REACTION filters (Friendly, Neutral, Hostile)
+    local reaction = UnitReaction("player", unit)
+    
+    if reaction then
+        if reaction >= 5 then
+            -- Friendly
+            if P.aboveFriendly ~= true then
+                return false
+            end
+        elseif reaction == 4 then
+            -- Neutral
+            if P.aboveNeutral ~= true then
+                return false
+            end
+        elseif reaction <= 3 then
+            -- Hostile
+            if P.aboveHostile ~= true then
+                return false
+            end
+        end
+    end
+
+    -- Check COMBAT filters
+    if isPlayer then
+        if P.playerCombatWithOnly == true and not UnitAffectingCombat(unit) then
+            return false
+        end
+    else
+        if P.npcCombatWithOnly == true and not UnitAffectingCombat(unit) then
+            return false
+        end
+    end
+
     return true
 end
 
