@@ -73,6 +73,7 @@ defaultSettings.profile.frameLevel		= 0
 defaultSettings.profile.cooldownSize		= 10
 defaultSettings.profile.stackSize		= 10
 defaultSettings.profile.showCooldownTexture		= true
+defaultSettings.profile.showDebuffBorder		= true
 
 
 defaultSettings.profile.blinkTimeleft		= 0.2 --20%
@@ -631,7 +632,7 @@ core.DefaultSpellOptionsTable = {
 
 		showCooldown = {
 			name = L["Show cooldown"],
-			desc = L["Show cooldown text under the spell icon."],
+			desc = L["Show cooldown text below the spell icon. (Independent from cooldown overlay)"],
 			type = "toggle",
 			order	= 16,
 			set = function(info,val) 
@@ -651,6 +652,12 @@ core.DefaultSpellOptionsTable = {
 			order	= 17,
 		},
 		
+		showDebuffBorder = {
+			name = L["Show debuff border"],
+			desc = L["Show a colored border around debuff icons based on magic school."],
+			type = "toggle",
+			order	= 18,
+		},
 		
 	}
 }

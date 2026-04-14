@@ -65,7 +65,7 @@ L["Size of the icons."] = true
 L["Larger self spells"] = true
 L["Make your spells 20% bigger then other's."] = true
 L["Show cooldown"] = true
-L["Show cooldown text under the spell icon."] = true
+L["Show cooldown text below the spell icon. (Independent from cooldown overlay)"] = true
 L["Cooldown Text Size"] = true
 L["sizes: 9, 10, 12, 13, 14, 16, 20"] = true
 L["Show bar background"] = true
@@ -110,3 +110,5 @@ L["Add spell descriptions to the specific spell's list.\nDisabling this will low
 L["Show cooldown overlay"] = true
 L["Show a clock overlay over spell textures showing the time remaining."] = true
 L["This overlay tends to disappear when the frame's moving."] = true
+L["Show debuff border"] = true
+L["Show a colored border around debuff icons based on magic school."] = true

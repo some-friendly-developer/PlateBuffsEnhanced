@@ -76,11 +76,11 @@ local function iconOnShow(self)
     if P.showCooldown == true and self.expirationTime > 0 then
         self.cdbg:Show()
         self.cd:Show()
-
-        if P.showCooldownTexture == true then
-            self.cdtexture:SetCooldown(self.startTime, self.duration)
-            self.cdtexture:Show()
-        end
+    end
+    
+    if P.showCooldownTexture == true and self.expirationTime > 0 then
+        self.cdtexture:SetCooldown(self.startTime, self.duration)
+        self.cdtexture:Show()
     end
 
     local iconSize = P.iconSize
@@ -106,9 +106,26 @@ local function iconOnShow(self)
 
     if self.isDebuff then
         local colour = DebuffTypeColor[self.debuffType or ""]
-        if colour then
-            -- Optionally apply debuff coloring
+        if colour and P.showDebuffBorder then
+            self.debuffBorderTop:SetVertexColor(colour.r, colour.g, colour.b)
+            self.debuffBorderBottom:SetVertexColor(colour.r, colour.g, colour.b)
+            self.debuffBorderLeft:SetVertexColor(colour.r, colour.g, colour.b)
+            self.debuffBorderRight:SetVertexColor(colour.r, colour.g, colour.b)
+            self.debuffBorderTop:Show()
+            self.debuffBorderBottom:Show()
+            self.debuffBorderLeft:Show()
+            self.debuffBorderRight:Show()
+        else
+            self.debuffBorderTop:Hide()
+            self.debuffBorderBottom:Hide()
+            self.debuffBorderLeft:Hide()
+            self.debuffBorderRight:Hide()
         end
+    else
+        self.debuffBorderTop:Hide()
+        self.debuffBorderBottom:Hide()
+        self.debuffBorderLeft:Hide()
+        self.debuffBorderRight:Hide()
     end
 
     if self.playerCast and P.biggerSelfSpells == true then
@@ -123,6 +140,10 @@ local function iconOnHide(self)
     self.cdbg:Hide()
     self.cd:Hide()
     self.cdtexture:Hide()
+    self.debuffBorderTop:Hide()
+    self.debuffBorderBottom:Hide()
+    self.debuffBorderLeft:Hide()
+    self.debuffBorderRight:Hide()
     self:SetAlpha(1)
 
     UpdateBuffSize(self, P.iconSize)
@@ -174,6 +195,39 @@ local function CreateBuffFrame(parentFrame, unit)
     f.icon:SetPoint("TOP", f)
     f.texture = f.icon:CreateTexture(nil, "BACKGROUND")
     f.texture:SetAllPoints(true)
+
+    -- Create debuff border using 4 edge textures for a border effect
+    -- Top border
+    f.debuffBorderTop = f.icon:CreateTexture(nil, "OVERLAY")
+    f.debuffBorderTop:SetTexture("Interface\\Buttons\\WHITE8x8")
+    f.debuffBorderTop:SetHeight(1)
+    f.debuffBorderTop:SetPoint("TOPLEFT", f.icon, "TOPLEFT", 0, 0)
+    f.debuffBorderTop:SetPoint("TOPRIGHT", f.icon, "TOPRIGHT", 0, 0)
+    f.debuffBorderTop:Hide()
+
+    -- Bottom border
+    f.debuffBorderBottom = f.icon:CreateTexture(nil, "OVERLAY")
+    f.debuffBorderBottom:SetTexture("Interface\\Buttons\\WHITE8x8")
+    f.debuffBorderBottom:SetHeight(1)
+    f.debuffBorderBottom:SetPoint("BOTTOMLEFT", f.icon, "BOTTOMLEFT", 0, 0)
+    f.debuffBorderBottom:SetPoint("BOTTOMRIGHT", f.icon, "BOTTOMRIGHT", 0, 0)
+    f.debuffBorderBottom:Hide()
+
+    -- Left border
+    f.debuffBorderLeft = f.icon:CreateTexture(nil, "OVERLAY")
+    f.debuffBorderLeft:SetTexture("Interface\\Buttons\\WHITE8x8")
+    f.debuffBorderLeft:SetWidth(1)
+    f.debuffBorderLeft:SetPoint("TOPLEFT", f.icon, "TOPLEFT", 0, 0)
+    f.debuffBorderLeft:SetPoint("BOTTOMLEFT", f.icon, "BOTTOMLEFT", 0, 0)
+    f.debuffBorderLeft:Hide()
+
+    -- Right border
+    f.debuffBorderRight = f.icon:CreateTexture(nil, "OVERLAY")
+    f.debuffBorderRight:SetTexture("Interface\\Buttons\\WHITE8x8")
+    f.debuffBorderRight:SetWidth(1)
+    f.debuffBorderRight:SetPoint("TOPRIGHT", f.icon, "TOPRIGHT", 0, 0)
+    f.debuffBorderRight:SetPoint("BOTTOMRIGHT", f.icon, "BOTTOMRIGHT", 0, 0)
+    f.debuffBorderRight:Hide()
 
     local cd = f:CreateFontString(nil, "ARTWORK", "ChatFontNormal")
     cd:SetText("0")
