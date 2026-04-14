@@ -303,8 +303,7 @@ local function CreateBarFrame(parentFrame, unit)
 
     -- OPTIMIZATION: Keep polling but increase interval from 500ms to 250ms
     -- UNIT_AURA doesn't fire for nameplate display tokens, so polling is necessary
-    -- 250ms is still a 50% reduction from original while maintaining responsiveness
-    f:SetScript("OnUpdate", function(self, elapsed)
+    f.updateHandler = function(self, elapsed)
         self.lastAuraUpdate = self.lastAuraUpdate + elapsed
         if self.lastAuraUpdate >= self.auraUpdateInterval then
             self.lastAuraUpdate = 0
@@ -313,7 +312,8 @@ local function CreateBarFrame(parentFrame, unit)
                 core:AddBuffsToPlate(self.unit)
             end
         end
-    end)
+    end
+    f:SetScript("OnUpdate", f.updateHandler)
 
     f:Show()
     return f
@@ -495,10 +495,37 @@ function core:AddBuffsToPlate(unit)
 end
 
 function core:HidePlateSpells(unit)
+    -- MEMORY LEAK FIX: Properly clean up frame references
     if buffFrames[unit] then
-        for i = 1, table_getn(buffFrames[unit]) do
-            buffFrames[unit][i]:Hide()
+        for i = 1, #(buffFrames[unit] or {}) do
+            local frame = buffFrames[unit][i]
+            if frame then
+                frame:Hide()
+                frame:ClearAllPoints()
+                -- Clear all scripts to break any references
+                frame:SetScript("OnShow", nil)
+                frame:SetScript("OnHide", nil)
+                frame:SetScript("OnUpdate", nil)
+                -- Set parent to nil so parent can be garbage collected
+                frame:SetParent(nil)
+                -- Clear all references to allow garbage collection
+                frame.unit = nil
+                frame.spellName = nil
+                frame.lastIcon = nil
+                frame.lastExpirationTime = nil
+                frame.icon = nil
+                frame.texture = nil
+                frame.cdbg = nil
+                frame.cd = nil
+                frame.cdtexture = nil
+                frame.stack = nil
+                frame.debuffBorderTop = nil
+                frame.debuffBorderBottom = nil
+                frame.debuffBorderLeft = nil
+                frame.debuffBorderRight = nil
+            end
         end
+        buffFrames[unit] = nil
     end
 end
 
@@ -668,7 +695,7 @@ function core:ResetAllBarPoints()
             end
         end
 
-        for r = 2, table_getn(buffBars[unit]) do
+        for r = 2, #(buffBars[unit] or {}) do
             buffBars[unit][r]:ClearAllPoints()
             buffBars[unit][r]:SetPoint(barPoint, buffBars[unit][r - 1], parentPoint, 0, 0)
         end

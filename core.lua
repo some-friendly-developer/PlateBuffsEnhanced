@@ -187,7 +187,7 @@ function core:OnEnable()
 
     -- Re-show any hidden bars
     for unit in pairs(buffBars) do
-        for i = 1, table_getn(buffBars[unit]) do
+        for i = 1, #(buffBars[unit] or {}) do
             buffBars[unit][i]:Show()
         end
     end
@@ -206,11 +206,71 @@ function core:OnEnable()
 end
 
 function core:OnDisable()
-    -- Clean up all nameplate data
+    -- MEMORY LEAK FIX: Properly clean up all nameplate data
     for unit in pairs(buffBars) do
-        for i = 1, table_getn(buffBars[unit]) do
-            buffBars[unit][i]:Hide()
+        if buffBars[unit] then
+            for i = 1, #(buffBars[unit] or {}) do
+                local barFrame = buffBars[unit][i]
+                if barFrame then
+                    barFrame:Hide()
+                    barFrame:ClearAllPoints()
+                    -- Clear scripts to break closure references
+                    barFrame:SetScript("OnUpdate", nil)
+                    if barFrame.updateHandler then
+                        barFrame.updateHandler = nil
+                    end
+                    -- Set parent to nil so parent can be garbage collected
+                    barFrame:SetParent(nil)
+                    -- Clear references
+                    barFrame.unit = nil
+                    barFrame.nameplateFrame = nil
+                    barFrame.barBG = nil
+                    barFrame.lastAuraUpdate = nil
+                    barFrame.auraUpdateInterval = nil
+                end
+            end
+            buffBars[unit] = nil
         end
+    end
+
+    -- Also clean up buffFrames
+    for unit in pairs(buffFrames) do
+        if buffFrames[unit] then
+            for i = 1, #(buffFrames[unit] or {}) do
+                local frame = buffFrames[unit][i]
+                if frame then
+                    frame:Hide()
+                    frame:ClearAllPoints()
+                    -- Clear all scripts
+                    frame:SetScript("OnShow", nil)
+                    frame:SetScript("OnHide", nil)
+                    frame:SetScript("OnUpdate", nil)
+                    -- Set parent to nil so parent can be garbage collected
+                    frame:SetParent(nil)
+                    -- Clear references
+                    frame.unit = nil
+                    frame.spellName = nil
+                    frame.lastIcon = nil
+                    frame.lastExpirationTime = nil
+                    frame.icon = nil
+                    frame.texture = nil
+                    frame.cdbg = nil
+                    frame.cd = nil
+                    frame.cdtexture = nil
+                    frame.stack = nil
+                    frame.debuffBorderTop = nil
+                    frame.debuffBorderBottom = nil
+                    frame.debuffBorderLeft = nil
+                    frame.debuffBorderRight = nil
+                end
+            end
+            buffFrames[unit] = nil
+        end
+    end
+
+    -- Clear guidBuffs
+    for unit in pairs(guidBuffs) do
+        guidBuffs[unit] = nil
     end
 end
 
@@ -343,25 +403,32 @@ function core:NAME_PLATE_UNIT_REMOVED(event, unit)
 
     self:HidePlateSpells(unit)
 
-    -- Remove from tracking tables
-    if buffFrames[unit] then
-        for i = 1, table_getn(buffFrames[unit]) do
-            if buffFrames[unit][i] then
-                buffFrames[unit][i]:Hide()
-            end
-        end
-        buffFrames[unit] = nil
-    end
-
+    -- Remove from tracking tables - with proper cleanup
     if buffBars[unit] then
-        for i = 1, table_getn(buffBars[unit]) do
-            if buffBars[unit][i] then
-                buffBars[unit][i]:Hide()
+        for i = 1, #(buffBars[unit] or {}) do
+            local barFrame = buffBars[unit][i]
+            if barFrame then
+                barFrame:Hide()
+                barFrame:ClearAllPoints()
+                -- Clear scripts to break closure references
+                barFrame:SetScript("OnUpdate", nil)
+                if barFrame.updateHandler then
+                    barFrame.updateHandler = nil
+                end
+                -- Set parent to nil so parent can be garbage collected
+                barFrame:SetParent(nil)
+                -- Clear references
+                barFrame.unit = nil
+                barFrame.nameplateFrame = nil
+                barFrame.barBG = nil
+                barFrame.lastAuraUpdate = nil
+                barFrame.auraUpdateInterval = nil
             end
         end
         buffBars[unit] = nil
     end
 
+    -- guidBuffs table is already cleared by HidePlateSpells chain
     guidBuffs[unit] = nil
 end
 
@@ -686,10 +753,37 @@ end
 ---
 
 function core:HidePlateSpells(unit)
+    -- MEMORY LEAK FIX: Properly clean up frame references
     if buffFrames[unit] then
-        for i = 1, table_getn(buffFrames[unit]) do
-            buffFrames[unit][i]:Hide()
+        for i = 1, #(buffFrames[unit] or {}) do
+            local frame = buffFrames[unit][i]
+            if frame then
+                frame:Hide()
+                frame:ClearAllPoints()
+                -- Clear all scripts to break any references
+                frame:SetScript("OnShow", nil)
+                frame:SetScript("OnHide", nil)
+                frame:SetScript("OnUpdate", nil)
+                -- Set parent to nil so parent can be garbage collected
+                frame:SetParent(nil)
+                -- Clear all references to allow garbage collection
+                frame.unit = nil
+                frame.spellName = nil
+                frame.lastIcon = nil
+                frame.lastExpirationTime = nil
+                frame.icon = nil
+                frame.texture = nil
+                frame.cdbg = nil
+                frame.cd = nil
+                frame.cdtexture = nil
+                frame.stack = nil
+                frame.debuffBorderTop = nil
+                frame.debuffBorderBottom = nil
+                frame.debuffBorderLeft = nil
+                frame.debuffBorderRight = nil
+            end
         end
+        buffFrames[unit] = nil
     end
 end
 
