@@ -79,7 +79,12 @@ local function iconOnShow(self)
     end
     
     if P.showCooldownTexture == true and self.expirationTime > 0 then
-        self.cdtexture:SetCooldown(self.startTime, self.duration)
+        -- Only set cooldown if the values have changed to avoid animation restart glitches
+        if self.cdtexture.lastStartTime ~= self.startTime or self.cdtexture.lastDuration ~= self.duration then
+            self.cdtexture:SetCooldown(self.startTime, self.duration)
+            self.cdtexture.lastStartTime = self.startTime
+            self.cdtexture.lastDuration = self.duration
+        end
         self.cdtexture:Show()
     end
 
