@@ -799,13 +799,6 @@ function core:BuildSpellUI()
 		
 		--last
 		
-		if data.when then
-			SpellOptionsTable.args.spellList.args[spellName].args.addedWhen = {
-				type = "description",	order = 90,
-				name = L["Added: "]..data.when,
-			}
-		end
-		
 		SpellOptionsTable.args.spellList.args[spellName].args.removeSpell = {
 			type = "execute",	order	= 91,
 			name	= L["Remove Spell"],

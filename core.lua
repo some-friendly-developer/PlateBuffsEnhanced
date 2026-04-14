@@ -776,7 +776,6 @@ function core:AddNewSpell(spellName)
         cooldownSize = P.cooldownSize or 14,
         show = 1,
         stackSize = P.stackSize or 14,
-        when = date("%m/%d %H:%M"),
     }
     
     self:Print("Added spell: " .. spellName)
