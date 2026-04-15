@@ -489,6 +489,7 @@ core.BarOptionsTable = {
 -- END OF BAR
 
 local tmpNewName = ""
+local tmpNewSpellId = nil
 core.SpellOptionsTable = {
 	name = core.titleFull,
 	type = "group",
@@ -515,11 +516,13 @@ core.SpellOptionsTable = {
 --~ 					Debug("num 1", num, spellName)
 					if spellName then
 						tmpNewName = spellName
+						tmpNewSpellId = num
 						return
 					end
 				end
 --~ 				Debug(val, type(val))
 				tmpNewName = val
+				tmpNewSpellId = nil
 			end,
 			get = function(info) return tmpNewName end
 		},
@@ -530,8 +533,9 @@ core.SpellOptionsTable = {
 			desc	= L["Add spell to list."],
 			func = function(info) 
 				if tmpNewName ~= "" then
-					core:AddNewSpell(tmpNewName)
+					core:AddNewSpell(tmpNewName, tmpNewSpellId)
 					tmpNewName = ""
+					tmpNewSpellId = nil
 				end
 			end
 		},
@@ -799,9 +803,15 @@ function core:BuildSpellUI()
 		
 		spellDesc = "??"
 		spellTexture = "Interface\\Icons\\"..core.unknownIcon
-		local _n, _r, _t = GetSpellInfo(spellName)
+		-- Use stored spell ID first (works for any spell); fall back to name (own spells only)
+		local resolvedId = data.spellId
+		local _n, _r, _t = GetSpellInfo(resolvedId or spellName)
 		if _t then
 			spellTexture = _t
+		end
+		-- Populate spellIDs for tooltip lookup
+		if resolvedId then
+			spellIDs[spellName] = resolvedId
 		end
 		if spellIDs[spellName] then
 			tooltip:SetHyperlink("spell:"..spellIDs[spellName])

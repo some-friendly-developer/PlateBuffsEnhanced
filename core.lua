@@ -119,6 +119,7 @@ for i = 1, #defaultSpells1 do
             cooldownSize = 18,
             show = 1,
             stackSize = 18,
+            spellId = defaultSpells1[i],
         }
     end
 end
@@ -131,6 +132,7 @@ for i = 1, #defaultSpells2 do
             cooldownSize = 14,
             show = 1,
             stackSize = 14,
+            spellId = defaultSpells2[i],
         }
     end
 end
@@ -614,7 +616,7 @@ end
 --- SPELL MANAGEMENT FUNCTIONS
 ---
 
-function core:AddNewSpell(spellName)
+function core:AddNewSpell(spellName, spellId)
     -- Validate spell name is not empty
     if not spellName or spellName == "" then
         self:Print("Spell name cannot be empty")
@@ -632,6 +634,7 @@ function core:AddNewSpell(spellName)
         cooldownSize = P.cooldownSize or 14,
         show = 1,
         stackSize = P.stackSize or 14,
+        spellId = spellId,
     }
     
     self:Print("Added spell: " .. spellName)
