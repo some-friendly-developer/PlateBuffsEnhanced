@@ -799,11 +799,12 @@ function core:BuildSpellUI()
 		
 		spellDesc = "??"
 		spellTexture = "Interface\\Icons\\"..core.unknownIcon
+		local _n, _r, _t = GetSpellInfo(spellName)
+		if _t then
+			spellTexture = _t
+		end
 		if spellIDs[spellName] then
 			tooltip:SetHyperlink("spell:"..spellIDs[spellName])
-			
-			spellTexture = select(3, GetSpellInfo( spellIDs[spellName] ))
-			
 			local lines = tooltip:NumLines()
 			if lines > 0 then
 				spellDesc = _G[folder.."TooltipTextLeft"..lines] and _G[folder.."TooltipTextLeft"..lines]:GetText() or "??"
@@ -893,8 +894,26 @@ function core:BuildSpellUI()
 			end,
 			get = function(info) return P.spellOpts[info[2]].stackSize or P.stackSize end
 		}
-		
-		
+
+		local previewSize = data.iconSize or P.iconSize
+		SpellOptionsTable.args.spellList.args[spellName].args.previewGroup = {
+			type = "group",
+			name = L["Preview"],
+			order = 50,
+			inline = true,
+			args = {
+				previewIcon = {
+					type = "description",
+					name = spellName .. " (" .. previewSize .. "px)",
+					order = 1,
+					image = spellTexture,
+					imageWidth = previewSize,
+					imageHeight = previewSize,
+					width = "full",
+				},
+			},
+		}
+
 		--last
 		
 		SpellOptionsTable.args.spellList.args[spellName].args.removeSpell = {
