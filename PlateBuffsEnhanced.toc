@@ -1,6 +1,6 @@
 ## Interface: 30300
 ## Title: Plate Buffs |cff1784d1Enhanced|r
-## Version: 2.1.2
+## Version: 2.1.3
 ## Notes: Show buffs on nameplates using Awesome WotLK's C_NamePlate API
 ## Author: |cFFfff569Sixset|r-Freedom x5
 ## SavedVariables: PBE_DB
