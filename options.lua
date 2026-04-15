@@ -10,6 +10,7 @@ local Debug = core.Debug
 local tonumber = tonumber
 local GetSpellInfo = GetSpellInfo
 local select = select
+local LSM_opts = LibStub and LibStub("LibSharedMedia-3.0", true)
 
 
 core.tooltip = core.tooltip or CreateFrame("GameTooltip", folder.."Tooltip", UIParent, "GameTooltipTemplate")
@@ -81,6 +82,8 @@ defaultSettings.profile.auraPollInterval	= 0.25
 defaultSettings.profile.showTotems = false
 defaultSettings.profile.npcCombatWithOnly = true
 defaultSettings.profile.playerCombatWithOnly = false
+defaultSettings.profile.cooldownFont           = ""  -- empty = default WoW font (Friz Quadrata)
+defaultSettings.profile.cooldownTextPosition   = 3   -- 1=Center, 2=Inner Bottom, 3=Under Icon
 
 
 
@@ -587,47 +590,121 @@ core.DefaultSpellOptionsTable = {
 			end,
 		},
 	
-		cooldownSize = {
-			name = L["Cooldown Text Size"],
-			desc = L["Text size"],
-			type = "range",
-			order	= 13,
-			min		= minTextSize,
-			max		= maxTextSize,
-			step	= 1,
-			set = function(info,val) 
-				P.cooldownSize = val
-				
-				core:ResetCooldownSize()
-				core:ResetAllPlateIcons()
-				core:ResetIconSizes()--Adjust the frame height with the new Cooldown Text Size
-		--~ 		core:UpdateBarsSize()
-				core:ShowAllKnownSpells()
-			end,
+		cooldownGroup = {
+			type = "group",
+			name = L["Cooldown Text"],
+			order = 11,
+			inline = true,
+			args = {
+				showCooldown = {
+					name = L["Show cooldown"],
+					desc = L["Show cooldown text below the spell icon. (Independent from cooldown overlay)"],
+					type = "toggle",
+					order = 1,
+					set = function(info, val)
+						P.showCooldown = val
+						core:ResetIconSizes()
+						core:ShowAllKnownSpells()
+					end,
+				},
+
+				cooldownSize = {
+					name = L["Cooldown Text Size"],
+					desc = L["Text size"],
+					type = "range",
+					order = 2,
+					min   = minTextSize,
+					max   = maxTextSize,
+					step  = 1,
+					set = function(info, val)
+						P.cooldownSize = val
+						core:ResetCooldownSize()
+						core:ResetAllPlateIcons()
+						core:ResetIconSizes()
+						core:ShowAllKnownSpells()
+					end,
+				},
+
+				showCooldownTexture = {
+					name = L["Show cooldown overlay"],
+					desc = L["Show a clock overlay over spell textures showing the time remaining."].."\n"..L["This overlay tends to disappear when the frame's moving."],
+					type = "toggle",
+					order = 3,
+				},
+
+				cooldownFont = {
+					name = L["Cooldown Font"],
+					desc = L["Font face for cooldown/duration text. Requires LibSharedMedia-3.0, or leave blank for the default WoW font."],
+					type = "select",
+					order = 4,
+					dialogControl = LSM_opts and "LSM30_Font" or nil,
+					values = function()
+						if LSM_opts then
+							local list = LSM_opts:List("font")
+							local t = { [""] = L["Default"] }
+							for _, name in ipairs(list) do
+								t[name] = name
+							end
+							return t
+						end
+						return {
+							[""]                    = L["Default"],
+							["Fonts\\FRIZQT__.TTF"] = "Friz Quadrata",
+							["Fonts\\ARIALN.TTF"]   = "Arial Narrow",
+							["Fonts\\skurri.ttf"]   = "Skurri",
+							["Fonts\\morpheus.ttf"] = "Morpheus",
+						}
+					end,
+					set = function(info, val)
+						P.cooldownFont = val
+						core:ResetCooldownFont()
+					end,
+					get = function(info) return P.cooldownFont or "" end,
+				},
+
+				cooldownTextPosition = {
+					name = L["Cooldown Text Position"],
+					desc = L["Where to anchor the cooldown/duration text relative to the icon."],
+					type = "select",
+					order = 5,
+					values = function()
+						return {
+							L["Icon Center"],
+							L["Icon Inner Bottom"],
+							L["Under Icon"],
+						}
+					end,
+					set = function(info, val)
+						P.cooldownTextPosition = val
+						core:ResetCooldownPosition()
+					end,
+					get = function(info) return P.cooldownTextPosition or 3 end,
+				},
+			},
 		},
 
 		stackSize = {
 			name = L["Stack Text Size"],
 			desc = L["Text size"],
 			type = "range",
-			order	= 14,
-			min		= minTextSize,
-			max		= maxTextSize,
-			step	= 1,
-			set = function(info,val) 
+			order = 12,
+			min   = minTextSize,
+			max   = maxTextSize,
+			step  = 1,
+			set = function(info, val)
 				P.stackSize = val
 				core:ResetStackSizes()
 			end,
 		},
-	
+
 		blinkTimeleft = {
 			name = L["Blink Timeleft"],
 			desc = L["Blink spell if below x% timeleft, (only if it's below 60 seconds)"],
 			type = "range",
-			order	= 15,
-			min		= 0,
-			max		= 1,
-			step	= 0.05,
+			order = 13,
+			min   = 0,
+			max   = 1,
+			step  = 0.05,
 			isPercent = true,
 		},
 
@@ -635,41 +712,19 @@ core.DefaultSpellOptionsTable = {
 			name = L["Aura Poll Interval"],
 			desc = L["How often (in seconds) to check for aura changes on nameplates. Lower = more responsive but higher CPU cost."],
 			type = "range",
-			order	= 16,
-			min		= 0.1,
-			max		= 2.0,
-			step	= 0.1,
+			order = 14,
+			min   = 0.1,
+			max   = 2.0,
+			step  = 0.1,
 		},
 
-		showCooldown = {
-			name = L["Show cooldown"],
-			desc = L["Show cooldown text below the spell icon. (Independent from cooldown overlay)"],
-			type = "toggle",
-			order	= 17,
-			set = function(info,val) 
-				P.showCooldown = val
-		--~ 		core:ResetCooldownSize()
-		--~ 		core:ResetAllPlateIcons()
-				core:ResetIconSizes()--Adjust the frame height with the new Cooldown Text Size
-		--~ 		core:UpdateBarsSize()
-				core:ShowAllKnownSpells()
-			end,
-		},
-		
-		showCooldownTexture = {
-			name = L["Show cooldown overlay"],
-			desc = L["Show a clock overlay over spell textures showing the time remaining."].."\n"..L["This overlay tends to disappear when the frame's moving."],
-			type = "toggle",
-			order	= 18,
-		},
-		
 		showDebuffBorder = {
 			name = L["Show debuff border"],
 			desc = L["Show a colored border around debuff icons based on magic school."],
 			type = "toggle",
-			order	= 19,
+			order = 15,
 		},
-		
+
 	}
 }
 

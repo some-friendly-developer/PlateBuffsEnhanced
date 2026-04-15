@@ -18,6 +18,7 @@ local Debug = core.Debug
 local DebuffTypeColor = DebuffTypeColor
 local select = select
 local string_gsub = string.gsub
+local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
 
 local buffBars = core.buffBars
 local buffFrames = core.buffFrames
@@ -68,12 +69,46 @@ end
 --- BUFF ICON DISPLAY LOGIC
 ---
 
+-- Returns the resolved font path for cooldown text.
+-- Prefers a LibSharedMedia-3.0 registered name, then falls back to a raw path,
+-- then the default WoW font.
+local function GetCooldownFont()
+    local fontSetting = P.cooldownFont
+    if fontSetting and fontSetting ~= "" then
+        if LSM then
+            local path = LSM:Fetch("font", fontSetting)
+            if path then return path end
+        end
+        return fontSetting
+    end
+    return "Fonts\\FRIZQT__.TTF"
+end
+
+-- Positions the cooldown FontString on a buff icon frame according to P.cooldownTextPosition:
+--   1 = Icon Center      (CENTER on CENTER)
+--   2 = Icon Inner Bottom (BOTTOM on BOTTOM, small inset)
+--   3 = Under Icon        (TOP on BOTTOM, outside the icon -- original behaviour)
+local function ApplyCooldownPosition(f)
+    local pos = P.cooldownTextPosition or 3
+    f.cd:ClearAllPoints()
+    if pos == 1 then
+        f.cd:SetPoint("CENTER", f.icon, "CENTER", 0, 0)
+    elseif pos == 2 then
+        f.cd:SetPoint("BOTTOM", f.icon, "BOTTOM", 0, 2)
+    else
+        f.cd:SetPoint("TOP", f.icon, "BOTTOM", 0, -2)
+    end
+end
+
 local function UpdateBuffSize(frame, size)
     frame.icon:SetWidth(size)
     frame.icon:SetHeight(size)
     frame:SetWidth(size)
 
-    if P.showCooldown == true then
+    -- Only grow the container frame when the text sits *outside* the icon (position 3).
+    -- For Center/Inner-Bottom the text is inside, so the icon height is sufficient.
+    local cdPos = P.cooldownTextPosition or 3
+    if P.showCooldown == true and cdPos == 3 then
         frame:SetHeight(size + frame.cd:GetStringHeight())
     else
         frame:SetHeight(size)
@@ -81,8 +116,7 @@ local function UpdateBuffSize(frame, size)
 end
 
 local function UpdateBuffCDSize(buffFrame, size)
-    buffFrame.cd:SetFont("Fonts\\FRIZQT__.TTF", size, "NORMAL")
-    buffFrame.cdbg:SetHeight(buffFrame.cd:GetStringHeight())
+    buffFrame.cd:SetFont(GetCooldownFont(), size, "NORMAL")
 end
 
 local function SetStackSize(buffFrame, size)
@@ -92,13 +126,11 @@ end
 local function iconOnShow(self)
     self:SetAlpha(1)
 
-    self.cdbg:Hide()
     self.cd:Hide()
     self.cdtexture:Hide()
     self.stack:Hide()
 
     if P.showCooldown == true and self.expirationTime > 0 then
-        self.cdbg:Show()
         self.cd:Show()
     end
     
@@ -125,6 +157,7 @@ local function iconOnShow(self)
         stackSize = spellOpts.stackSize or stackSize
     end
 
+    ApplyCooldownPosition(self)
     UpdateBuffCDSize(self, cooldownSize)
 
     if self.stackCount and tonumber(self.stackCount) and tonumber(self.stackCount) > 1 then
@@ -166,7 +199,6 @@ end
 
 local function iconOnHide(self)
     self.stack:Hide()
-    self.cdbg:Hide()
     self.cd:Hide()
     self.cdtexture:Hide()
     self.debuffBorderTop:Hide()
@@ -199,13 +231,12 @@ local function iconOnUpdate(self, elapsed)
         return
     end
 
-    local timeLeft = core:Round(rawTimeLeft, (rawTimeLeft < 10) and 1 or 0)
+    local timeLeft = core:Round(rawTimeLeft, (rawTimeLeft < 5) and 1 or 0)
 
     -- Update cooldown display only if visible
     if P.showCooldown == true then
         self.cd:SetText(core:SecondsToString(timeLeft, 1))
         self.cd:SetTextColor(core:RedToGreen(timeLeft, self.duration))
-        self.cdbg:SetWidth(self.cd:GetStringWidth())
     end
 
     -- OPTIMIZATION: Cache blink calculation threshold to avoid repeated division
@@ -266,14 +297,12 @@ local function CreateBuffFrame(parentFrame, unit)
     f.debuffBorderRight:SetPoint("BOTTOMRIGHT", f.icon, "BOTTOMRIGHT", 0, 0)
     f.debuffBorderRight:Hide()
 
-    local cd = f:CreateFontString(nil, "ARTWORK", "ChatFontNormal")
+    -- cd FontString is a child of f.icon (not f) so it renders ABOVE the icon
+    -- texture for the Center / Inner-Bottom position modes.
+    local cd = f.icon:CreateFontString(nil, "OVERLAY", "ChatFontNormal")
     cd:SetText("0")
-    cd:SetPoint("TOP", f.icon, "BOTTOM")
-
     f.cd = cd
-    f.cdbg = f:CreateTexture(nil, "BACKGROUND")
-    f.cdbg:SetTexture(0, 0, 0, .75)
-    f.cdbg:SetPoint("CENTER", cd)
+    ApplyCooldownPosition(f)
 
     f.cdtexture = CreateFrame("Cooldown", nil, f.icon, "CooldownFrameTemplate")
     f.cdtexture:SetReverse(true)
@@ -294,7 +323,6 @@ local function CreateBuffFrame(parentFrame, unit)
     f:SetScript("OnUpdate", iconOnUpdate)
 
     f.stackCount = 0
-    f.cdbg:Hide()
     f.cd:Hide()
     f.cdtexture:Hide()
     f.stack:Hide()
@@ -732,4 +760,34 @@ function core:ShowAllKnownSpells()
     for unit in pairs(buffFrames) do
         self:AddBuffsToPlate(unit)
     end
+end
+
+-- Re-applies the selected font to all visible cooldown FontStrings.
+-- Called when P.cooldownFont changes.
+function core:ResetCooldownFont()
+    for unit in pairs(buffFrames) do
+        for i = 1, #buffFrames[unit] do
+            local frame = buffFrames[unit][i]
+            if frame then
+                local spellOpts = self:HaveSpellOpts(frame.spellName)
+                local size = (frame.spellName and spellOpts and spellOpts.cooldownSize) or P.cooldownSize
+                UpdateBuffCDSize(frame, size)
+            end
+        end
+    end
+end
+
+-- Re-anchors the cooldown FontString on every icon to match the new position setting,
+-- then recalculates frame heights (position 3 grows the frame; 1 & 2 do not).
+-- Called when P.cooldownTextPosition changes.
+function core:ResetCooldownPosition()
+    for unit in pairs(buffFrames) do
+        for i = 1, #buffFrames[unit] do
+            local frame = buffFrames[unit][i]
+            if frame then
+                ApplyCooldownPosition(frame)
+            end
+        end
+    end
+    self:ResetIconSizes()
 end
