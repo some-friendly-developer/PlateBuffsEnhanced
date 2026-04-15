@@ -77,6 +77,7 @@ defaultSettings.profile.showDebuffBorder		= true
 
 
 defaultSettings.profile.blinkTimeleft		= 0.2 --20%
+defaultSettings.profile.auraPollInterval	= 0.25
 defaultSettings.profile.showTotems = false
 defaultSettings.profile.npcCombatWithOnly = true
 defaultSettings.profile.playerCombatWithOnly = false
@@ -630,11 +631,21 @@ core.DefaultSpellOptionsTable = {
 			isPercent = true,
 		},
 
+		auraPollInterval = {
+			name = L["Aura Poll Interval"],
+			desc = L["How often (in seconds) to check for aura changes on nameplates. Lower = more responsive but higher CPU cost."],
+			type = "range",
+			order	= 16,
+			min		= 0.1,
+			max		= 2.0,
+			step	= 0.1,
+		},
+
 		showCooldown = {
 			name = L["Show cooldown"],
 			desc = L["Show cooldown text below the spell icon. (Independent from cooldown overlay)"],
 			type = "toggle",
-			order	= 16,
+			order	= 17,
 			set = function(info,val) 
 				P.showCooldown = val
 		--~ 		core:ResetCooldownSize()
@@ -649,14 +660,14 @@ core.DefaultSpellOptionsTable = {
 			name = L["Show cooldown overlay"],
 			desc = L["Show a clock overlay over spell textures showing the time remaining."].."\n"..L["This overlay tends to disappear when the frame's moving."],
 			type = "toggle",
-			order	= 17,
+			order	= 18,
 		},
 		
 		showDebuffBorder = {
 			name = L["Show debuff border"],
 			desc = L["Show a colored border around debuff icons based on magic school."],
 			type = "toggle",
-			order	= 18,
+			order	= 19,
 		},
 		
 	}

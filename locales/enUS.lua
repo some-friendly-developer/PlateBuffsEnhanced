@@ -93,6 +93,8 @@ L["Spell name"] = true
 L["Always show spell, only show your spell, never show spell"] = true
 L["Blink Timeleft"] = true
 L["Blink spell if below x% timeleft, (only if it's below 60 seconds)"] = true
+L["Aura Poll Interval"] = true
+L["How often (in seconds) to check for aura changes on nameplates. Lower = more responsive but higher CPU cost."] = true
 L["Shrink Bar"] = true
 L["Shrink the bar horizontally when spells frames are hidden."] = true
 L["Watch Combatlog"] = true

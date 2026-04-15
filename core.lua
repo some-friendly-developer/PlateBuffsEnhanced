@@ -77,6 +77,13 @@ local buffBars = core.buffBars
 local guidBuffs = core.guidBuffs
 local buffFrames = core.buffFrames
 
+-- Single shared ticker: UNIT_AURA does not fire for nameplate unit tokens in WotLK 3.3.5,
+-- so we poll UnitAura on a 250ms interval instead of one OnUpdate per bar frame.
+local AURA_POLL_INTERVAL = 0.25
+local tickFrame = CreateFrame("Frame")
+tickFrame.elapsed = 0
+tickFrame:Hide()
+
 -- Settings
 core.defaultSettings = {
     profile = {
@@ -190,9 +197,26 @@ function core:OnEnable()
             end
         end
     end
+
+    -- Start the shared aura poll ticker
+    tickFrame.elapsed = 0
+    tickFrame:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = self.elapsed + elapsed
+        if self.elapsed < (P.auraPollInterval or AURA_POLL_INTERVAL) then return end
+        self.elapsed = 0
+        for unit in pairs(guidBuffs) do
+            core:UpdateAurasForUnit(unit)
+            core:AddBuffsToPlate(unit)
+        end
+    end)
+    tickFrame:Show()
 end
 
 function core:OnDisable()
+    -- Stop the shared aura poll ticker
+    tickFrame:Hide()
+    tickFrame:SetScript("OnUpdate", nil)
+
     -- Release all active nameplate frames back to the pools
     local units = {}
     for unit in pairs(guidBuffs) do
@@ -295,10 +319,6 @@ end
 function core:NAME_PLATE_UNIT_ADDED(event, unit)
     -- unit is like "nameplate1", "nameplate2", etc.
     if not unit then
-        return
-    end
-
-    if not self:ShouldShowNameplateAuras(unit) then
         return
     end
 
@@ -443,6 +463,14 @@ end
 function core:UpdateAurasForUnit(unit, frame)
     -- Clear existing aura data for this unit
     guidBuffs[unit] = {}
+
+    -- Dynamic filter: if this unit currently shouldn't show auras (e.g. not in combat
+    -- yet when npcCombatWithOnly=true), leave guidBuffs empty so AddBuffsToPlate hides
+    -- all icons. The tick will re-evaluate every poll cycle automatically.
+    if not self:ShouldShowNameplateAuras(unit) then
+        return
+    end
+
     local debuffCount = 0
 
     -- The "unit" parameter is for the nameplate (e.g., "nameplate1")
