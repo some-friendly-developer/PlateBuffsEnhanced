@@ -99,34 +99,11 @@ function core:SecondsToString(seconds, maxLenth)			--
 	if seconds==0 then
 		msg = "0s "
 	else
-		local sYear, sMonth, sDay, sHour, sMinute = 0, 0, 0, 0, 0;
-
-		while seconds > (chunks.year - 1) do
-			sYear	= sYear + 1;
-			seconds	= seconds - chunks.year;
-		end
-		while seconds > (chunks.month - 1) do
-			sMonth	= sMonth + 1;
-			seconds	= seconds - chunks.month;
-		end
---~ 	while seconds > (chunks.week - 1) do
---~ 		sWeek	= sWeek + 1;
---~ 		seconds	= seconds - chunks.week;
---~ 	end
-		while seconds > (chunks.day - 1) do
-			sDay	= sDay + 1;
-			seconds	= seconds - chunks.day;
-		end
-	
-		while seconds > (chunks.hour - 1) do
-			sHour	= sHour + 1;
-			seconds	= seconds - chunks.hour;
-		end
-		
-		while seconds > (chunks.minute - 1) do
-			sMinute	= sMinute + 1;
-			seconds	= seconds - chunks.minute;
-		end
+		local sYear  = math_floor(seconds / chunks.year);   seconds = seconds % chunks.year;
+		local sMonth = math_floor(seconds / chunks.month);  seconds = seconds % chunks.month;
+		local sDay   = math_floor(seconds / chunks.day);    seconds = seconds % chunks.day;
+		local sHour  = math_floor(seconds / chunks.hour);   seconds = seconds % chunks.hour;
+		local sMinute = math_floor(seconds / chunks.minute); seconds = seconds % chunks.minute;
 		
 		local sLenth = 0;
 		if sYear > 0 and sLenth < maxLenth then

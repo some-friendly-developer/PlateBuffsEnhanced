@@ -14,8 +14,6 @@ local GetTime = GetTime
 local CreateFrame = CreateFrame
 local table_remove = table.remove
 local table_sort = table.sort
-local type = type
-local table_getn = table.getn
 local Debug = core.Debug
 local DebuffTypeColor = DebuffTypeColor
 local select = select
@@ -24,6 +22,32 @@ local string_gsub = string.gsub
 local buffBars = core.buffBars
 local buffFrames = core.buffFrames
 local guidBuffs = core.guidBuffs
+
+-- Frame pools: reuse frames across nameplate bind/unbind to reduce GC pressure
+local iconFramePool = {}
+local barFramePool  = {}
+
+local function ReleaseIconFrame(f)
+    f:Hide()
+    f:ClearAllPoints()
+    f:SetScript("OnShow", nil)
+    f:SetScript("OnHide", nil)
+    f:SetScript("OnUpdate", nil)
+    -- Park on UIParent so it isn't anchored to a recycled nameplate frame
+    f:SetParent(UIParent)
+    f.unit      = nil
+    f.spellName = nil
+    iconFramePool[#iconFramePool + 1] = f
+end
+
+local function ReleaseBarFrame(f)
+    f:Hide()
+    f:ClearAllPoints()
+    f:SetParent(UIParent)
+    f.unit          = nil
+    f.nameplateFrame = nil
+    barFramePool[#barFramePool + 1] = f
+end
 
 core.unknownIcon = "Inv_misc_questionmark"
 
@@ -278,22 +302,42 @@ local function CreateBuffFrame(parentFrame, unit)
     return f
 end
 
+local function AcquireIconFrame(parentFrame, unit)
+    local f = table_remove(iconFramePool)
+    if f then
+        f:SetParent(parentFrame)
+        f.unit           = unit
+        f.expirationTime = 0
+        f.startTime      = 0
+        f.duration       = 1
+        f.lastUpdate     = 0
+        f.stackCount     = 0
+        f.spellName      = nil
+        f.isDebuff       = nil
+        f.debuffType     = nil
+        f.playerCast     = nil
+        f:SetScript("OnShow",   iconOnShow)
+        f:SetScript("OnHide",   iconOnHide)
+        f:SetScript("OnUpdate", iconOnUpdate)
+        return f
+    end
+    return CreateBuffFrame(parentFrame, unit)
+end
+
 local function CreateBarFrame(parentFrame, unit)
     local f = CreateFrame("frame", nil, parentFrame)
     f.unit = unit
-    f.nameplateFrame = parentFrame  -- Store reference to nameplate frame
-    f.lastAuraUpdate = 0
-    f.auraUpdateInterval = 0.25  -- Check auras every 250ms instead of 500ms (reduced from original)
+    f.nameplateFrame = parentFrame
 
     f:SetFrameStrata("BACKGROUND")
-    f:SetBackdrop(nil)  -- Remove any border
+    f:SetBackdrop(nil)
     f:SetWidth(1)
     f:SetHeight(1)
 
     f.barBG = f:CreateTexture(nil, "BACKGROUND")
     f.barBG:SetAllPoints(true)
-    f.barBG:SetTexture("Interface\\Buttons\\WHITE8x8")  -- Use WoW's built-in white texture
-    f.barBG:SetVertexColor(1, 1, 0, 0.5)  -- Yellow with 50% alpha for visibility
+    f.barBG:SetTexture("Interface\\Buttons\\WHITE8x8")
+    f.barBG:SetVertexColor(1, 1, 0, 0.5)
 
     if P.showBarBackground == true then
         f.barBG:Show()
@@ -301,22 +345,22 @@ local function CreateBarFrame(parentFrame, unit)
         f.barBG:Hide()
     end
 
-    -- OPTIMIZATION: Keep polling but increase interval from 500ms to 250ms
-    -- UNIT_AURA doesn't fire for nameplate display tokens, so polling is necessary
-    f.updateHandler = function(self, elapsed)
-        self.lastAuraUpdate = self.lastAuraUpdate + elapsed
-        if self.lastAuraUpdate >= self.auraUpdateInterval then
-            self.lastAuraUpdate = 0
-            if self.unit and buffFrames[self.unit] then
-                core:UpdateAurasForUnit(self.unit, self.nameplateFrame)
-                core:AddBuffsToPlate(self.unit)
-            end
-        end
-    end
-    f:SetScript("OnUpdate", f.updateHandler)
+    -- Aura updates are now driven by UNIT_AURA events; no OnUpdate polling needed.
 
     f:Show()
     return f
+end
+
+local function AcquireBarFrame(parentFrame, unit)
+    local f = table_remove(barFramePool)
+    if f then
+        f:SetParent(parentFrame)
+        f.unit           = unit
+        f.nameplateFrame = parentFrame
+        f:Show()
+        return f
+    end
+    return CreateBarFrame(parentFrame, unit)
 end
 
 ---
@@ -335,7 +379,7 @@ function core:BuildBuffFrameForUnit(unit, nameplateFrame)
     end
 
     if not buffBars[unit][1] then
-        buffBars[unit][1] = CreateBarFrame(nameplateFrame, unit)
+        buffBars[unit][1] = AcquireBarFrame(nameplateFrame, unit)
     end
 
     buffBars[unit][1]:ClearAllPoints()
@@ -354,7 +398,7 @@ function core:BuildBuffFrameForUnit(unit, nameplateFrame)
     if numBars > 1 then
         for r = 2, numBars do
             if not buffBars[unit][r] then
-                buffBars[unit][r] = CreateBarFrame(nameplateFrame, unit)
+                buffBars[unit][r] = AcquireBarFrame(nameplateFrame, unit)
             end
             buffBars[unit][r]:ClearAllPoints()
             buffBars[unit][r]:SetPoint(barPoint, buffBars[unit][r - 1], platePoint, 0, 0)
@@ -380,7 +424,7 @@ function core:BuildIconFrames(unit)
             total = total + 1
 
             if not buffFrames[unit][total] then
-                buffFrames[unit][total] = CreateBuffFrame(buffBars[unit][bar], unit)
+                buffFrames[unit][total] = AcquireIconFrame(buffBars[unit][bar], unit)
             end
 
             buffFrames[unit][total]:SetParent(buffBars[unit][bar])
@@ -415,7 +459,7 @@ function core:AddBuffsToPlate(unit)
 
     if guidBuffs[unit] then
         -- OPTIMIZATION: Only sort if aura count changed (simple delta detection)
-        local auraCount = table_getn(guidBuffs[unit] or {})
+        local auraCount = #(guidBuffs[unit] or {})
         local shouldSort = (buffFrames[unit].lastAuraCount or 0) ~= auraCount
         buffFrames[unit].lastAuraCount = auraCount
         
@@ -495,43 +539,25 @@ function core:AddBuffsToPlate(unit)
 end
 
 function core:HidePlateSpells(unit)
-    -- MEMORY LEAK FIX: Properly clean up frame references
     if buffFrames[unit] then
-        for i = 1, #(buffFrames[unit] or {}) do
-            local frame = buffFrames[unit][i]
-            if frame then
-                frame:Hide()
-                frame:ClearAllPoints()
-                -- Clear all scripts to break any references
-                frame:SetScript("OnShow", nil)
-                frame:SetScript("OnHide", nil)
-                frame:SetScript("OnUpdate", nil)
-                -- Set parent to nil so parent can be garbage collected
-                frame:SetParent(nil)
-                -- Clear all references to allow garbage collection
-                frame.unit = nil
-                frame.spellName = nil
-                frame.lastIcon = nil
-                frame.lastExpirationTime = nil
-                frame.icon = nil
-                frame.texture = nil
-                frame.cdbg = nil
-                frame.cd = nil
-                frame.cdtexture = nil
-                frame.stack = nil
-                frame.debuffBorderTop = nil
-                frame.debuffBorderBottom = nil
-                frame.debuffBorderLeft = nil
-                frame.debuffBorderRight = nil
+        for i = 1, #buffFrames[unit] do
+            if buffFrames[unit][i] then
+                ReleaseIconFrame(buffFrames[unit][i])
             end
         end
         buffFrames[unit] = nil
     end
 end
 
-function core:RemoveOldSpells(unit)
-    -- No longer needed with C_NamePlate (UNIT_AURA handles updates)
-    -- Kept as stub for compatibility
+function core:ReleaseBuffBars(unit)
+    if buffBars[unit] then
+        for i = 1, #buffBars[unit] do
+            if buffBars[unit][i] then
+                ReleaseBarFrame(buffBars[unit][i])
+            end
+        end
+        buffBars[unit] = nil
+    end
 end
 
 ---
@@ -607,7 +633,7 @@ end
 
 function core:UpdateAllFrameLevel()
     for unit in pairs(buffFrames) do
-        for i = 1, table_getn(buffFrames[unit]) do
+        for i = 1, #buffFrames[unit] do
             self:SetFrameLevel(buffFrames[unit][i])
         end
     end
@@ -628,7 +654,7 @@ function core:ResetIconSizes()
     local iconSize
 
     for unit in pairs(buffFrames) do
-        for i = 1, table_getn(buffFrames[unit]) do
+        for i = 1, #buffFrames[unit] do
             local frame = buffFrames[unit][i]
             local spellOpts = self:HaveSpellOpts(frame.spellName)
 
@@ -653,7 +679,7 @@ end
 
 function core:ResetCooldownSize()
     for unit in pairs(buffFrames) do
-        for i = 1, table_getn(buffFrames[unit]) do
+        for i = 1, #buffFrames[unit] do
             local spellOpts = self:HaveSpellOpts(buffFrames[unit][i].spellName)
             UpdateBuffCDSize(buffFrames[unit][i], 
                            buffFrames[unit][i].spellName and spellOpts and 
@@ -664,7 +690,7 @@ end
 
 function core:ResetStackSizes()
     for unit in pairs(buffFrames) do
-        for i = 1, table_getn(buffFrames[unit]) do
+        for i = 1, #buffFrames[unit] do
             local spellOpts = self:HaveSpellOpts(buffFrames[unit][i].spellName)
             SetStackSize(buffFrames[unit][i], 
                         buffFrames[unit][i].spellName and spellOpts and 

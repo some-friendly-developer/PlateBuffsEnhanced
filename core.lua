@@ -13,10 +13,7 @@ local pairs = pairs
 local InterfaceOptionsFrame_OpenToCategory = InterfaceOptionsFrame_OpenToCategory
 local GetTime = GetTime
 local table_sort = table.sort
-local string_sub = string.sub
-local string_len = string.len
 local LibStub = LibStub
-local table_getn = table.getn
 local table_insert = table.insert
 local table_remove = table.remove
 local UnitName = UnitName
@@ -67,11 +64,6 @@ if myClass == "DRUID" or myClass == "ROGUE" then
     table.insert(defaultSpells2, 6512)  -- Detect Lesser Invisibility
 end
 
--- Event registration
-local regEvents = {
-    -- Legacy events removed - using C_NamePlate API instead
-}
-
 -- Database and profile references
 core.db = {}
 local db, P
@@ -103,7 +95,7 @@ local coreOpts, spellUI, dspellUI, profileUI, whoUI, barUI
 -- Totem name mapping
 local totems = {}
 local name, texture
-for i = 1, table_getn(totemList) do
+for i = 1, #totemList do
     name, _, texture = GetSpellInfo(totemList[i])
     if name then
         totems[name] = texture
@@ -112,7 +104,7 @@ end
 
 -- Initialize default spells in settings
 local defaultSettings = core.defaultSettings
-for i = 1, table_getn(defaultSpells1) do
+for i = 1, #defaultSpells1 do
     name = GetSpellInfo(defaultSpells1[i])
     if name then
         defaultSettings.profile.spellOpts[name] = {
@@ -124,7 +116,7 @@ for i = 1, table_getn(defaultSpells1) do
     end
 end
 
-for i = 1, table_getn(defaultSpells2) do
+for i = 1, #defaultSpells2 do
     name = GetSpellInfo(defaultSpells2[i])
     if name then
         defaultSettings.profile.spellOpts[name] = {
@@ -175,12 +167,7 @@ function core:OnEnable()
     db = self.db
     P = db.profile
 
-    -- Register standard events
-    for i, event in pairs(regEvents) do
-        self:RegisterEvent(event)
-    end
-
-    -- Register C_NamePlate events (replaces old LibNameplate callbacks)
+    -- Register C_NamePlate events
     self:RegisterEvent("NAME_PLATE_UNIT_ADDED")
     self:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
     self:RegisterEvent("UNIT_AURA")
@@ -206,70 +193,14 @@ function core:OnEnable()
 end
 
 function core:OnDisable()
-    -- MEMORY LEAK FIX: Properly clean up all nameplate data
-    for unit in pairs(buffBars) do
-        if buffBars[unit] then
-            for i = 1, #(buffBars[unit] or {}) do
-                local barFrame = buffBars[unit][i]
-                if barFrame then
-                    barFrame:Hide()
-                    barFrame:ClearAllPoints()
-                    -- Clear scripts to break closure references
-                    barFrame:SetScript("OnUpdate", nil)
-                    if barFrame.updateHandler then
-                        barFrame.updateHandler = nil
-                    end
-                    -- Set parent to nil so parent can be garbage collected
-                    barFrame:SetParent(nil)
-                    -- Clear references
-                    barFrame.unit = nil
-                    barFrame.nameplateFrame = nil
-                    barFrame.barBG = nil
-                    barFrame.lastAuraUpdate = nil
-                    barFrame.auraUpdateInterval = nil
-                end
-            end
-            buffBars[unit] = nil
-        end
-    end
-
-    -- Also clean up buffFrames
-    for unit in pairs(buffFrames) do
-        if buffFrames[unit] then
-            for i = 1, #(buffFrames[unit] or {}) do
-                local frame = buffFrames[unit][i]
-                if frame then
-                    frame:Hide()
-                    frame:ClearAllPoints()
-                    -- Clear all scripts
-                    frame:SetScript("OnShow", nil)
-                    frame:SetScript("OnHide", nil)
-                    frame:SetScript("OnUpdate", nil)
-                    -- Set parent to nil so parent can be garbage collected
-                    frame:SetParent(nil)
-                    -- Clear references
-                    frame.unit = nil
-                    frame.spellName = nil
-                    frame.lastIcon = nil
-                    frame.lastExpirationTime = nil
-                    frame.icon = nil
-                    frame.texture = nil
-                    frame.cdbg = nil
-                    frame.cd = nil
-                    frame.cdtexture = nil
-                    frame.stack = nil
-                    frame.debuffBorderTop = nil
-                    frame.debuffBorderBottom = nil
-                    frame.debuffBorderLeft = nil
-                    frame.debuffBorderRight = nil
-                end
-            end
-            buffFrames[unit] = nil
-        end
-    end
-
-    -- Clear guidBuffs
+    -- Release all active nameplate frames back to the pools
+    local units = {}
     for unit in pairs(guidBuffs) do
+        units[#units + 1] = unit
+    end
+    for _, unit in ipairs(units) do
+        self:HidePlateSpells(unit)
+        self:ReleaseBuffBars(unit)
         guidBuffs[unit] = nil
     end
 end
@@ -398,37 +329,9 @@ function core:NAME_PLATE_UNIT_ADDED(event, unit)
 end
 
 function core:NAME_PLATE_UNIT_REMOVED(event, unit)
-    -- Clean up when nameplate disappears
     Debug("NAME_PLATE_UNIT_REMOVED", unit)
-
-    self:HidePlateSpells(unit)
-
-    -- Remove from tracking tables - with proper cleanup
-    if buffBars[unit] then
-        for i = 1, #(buffBars[unit] or {}) do
-            local barFrame = buffBars[unit][i]
-            if barFrame then
-                barFrame:Hide()
-                barFrame:ClearAllPoints()
-                -- Clear scripts to break closure references
-                barFrame:SetScript("OnUpdate", nil)
-                if barFrame.updateHandler then
-                    barFrame.updateHandler = nil
-                end
-                -- Set parent to nil so parent can be garbage collected
-                barFrame:SetParent(nil)
-                -- Clear references
-                barFrame.unit = nil
-                barFrame.nameplateFrame = nil
-                barFrame.barBG = nil
-                barFrame.lastAuraUpdate = nil
-                barFrame.auraUpdateInterval = nil
-            end
-        end
-        buffBars[unit] = nil
-    end
-
-    -- guidBuffs table is already cleared by HidePlateSpells chain
+    self:HidePlateSpells(unit)   -- returns icon frames to pool
+    self:ReleaseBuffBars(unit)   -- returns bar frames to pool
     guidBuffs[unit] = nil
 end
 
@@ -533,59 +436,6 @@ function core:HaveSpellOpts(spellName)
     return false
 end
 
-function core:UnitFromNameplateToken(unit)
-    -- Try to map a nameplate token (nameplate1, nameplate2, etc.) to an actual unit token
-    -- This is necessary because UnitAura doesn't work with display tokens
-    
-    -- First, try to get the unit name from the display token
-    local unitName = UnitName(unit)
-    if not unitName then
-        return unit  -- Can't determine, return original
-    end
-    
-    -- Check if it's the player
-    if unitName == UnitName("player") then
-        return "player"
-    end
-    
-    -- Check if it's the target
-    if UnitExists("target") and UnitName("target") == unitName then
-        return "target"
-    end
-    
-    -- Check if it's the focus
-    if UnitExists("focus") and UnitName("focus") == unitName then
-        return "focus"
-    end
-    
-    -- Check if it's mouseover
-    if UnitExists("mouseover") and UnitName("mouseover") == unitName then
-        return "mouseover"
-    end
-    
-    -- Check party members
-    for i = 1, GetNumPartyMembers() do
-        local partyUnit = "party" .. i
-        if UnitExists(partyUnit) and UnitName(partyUnit) == unitName then
-            return partyUnit
-        end
-    end
-    
-    -- Check raid members
-    if GetNumRaidMembers() > 0 then
-        for i = 1, GetNumRaidMembers() do
-            local raidUnit = "raid" .. i
-            if UnitExists(raidUnit) and UnitName(raidUnit) == unitName then
-                return raidUnit
-            end
-        end
-    end
-    
-    -- If we can't map it, return the original
-    -- In some cases, the nameplate token might actually work with UnitAura
-    return unit
-end
-
 ---
 --- AURA COLLECTION & FILTERING
 ---
@@ -676,12 +526,6 @@ function core:UpdateAurasForUnit(unit, frame)
         i = i + 1
     end
     
-    -- Store debug info
-    if not self.debugAuras then self.debugAuras = {} end
-    self.debugAuras[unit] = {
-        totalDebuffs = debuffCount,
-        collectedAuras = table_getn(guidBuffs[unit] or {}),
-    }
 end
 
 function core:IsCasterPlayer(caster)
@@ -697,17 +541,6 @@ function core:IsCasterPlayer(caster)
     -- Direct GUID comparison (most common case)
     if playerGUID and caster == playerGUID then
         return true
-    end
-    
-    -- Fallback for edge cases with different GUID formats
-    -- Only do expensive string operations if absolutely necessary
-    if playerGUID and caster and type(caster) == "string" then
-        local playerNum = playerGUID:gsub("[x%-]", "")
-        local casterNum = tostring(caster):gsub("[x%-]", "")
-        
-        if playerNum == casterNum then
-            return true
-        end
     end
     
     return false
@@ -746,151 +579,6 @@ function core:ShouldShowAura(name, caster, auraType, debuffType)
             return false
         end
     end
-end
-
----
---- UTILITY FUNCTIONS (preserved from original)
----
-
-function core:HidePlateSpells(unit)
-    -- MEMORY LEAK FIX: Properly clean up frame references
-    if buffFrames[unit] then
-        for i = 1, #(buffFrames[unit] or {}) do
-            local frame = buffFrames[unit][i]
-            if frame then
-                frame:Hide()
-                frame:ClearAllPoints()
-                -- Clear all scripts to break any references
-                frame:SetScript("OnShow", nil)
-                frame:SetScript("OnHide", nil)
-                frame:SetScript("OnUpdate", nil)
-                -- Set parent to nil so parent can be garbage collected
-                frame:SetParent(nil)
-                -- Clear all references to allow garbage collection
-                frame.unit = nil
-                frame.spellName = nil
-                frame.lastIcon = nil
-                frame.lastExpirationTime = nil
-                frame.icon = nil
-                frame.texture = nil
-                frame.cdbg = nil
-                frame.cd = nil
-                frame.cdtexture = nil
-                frame.stack = nil
-                frame.debuffBorderTop = nil
-                frame.debuffBorderBottom = nil
-                frame.debuffBorderLeft = nil
-                frame.debuffBorderRight = nil
-            end
-        end
-        buffFrames[unit] = nil
-    end
-end
-
-function core:Round(num, zeros)
-    return math.floor(num * 10 ^ (zeros or 0) + 0.5) / 10 ^ (zeros or 0)
-end
-
-function core:RedToGreen(current, max)
-    local percentage = (current / max) * 100
-    local red, green = 0, 0
-    if percentage >= 50 then
-        green = 1
-        red = ((100 - percentage) / 100) * 2
-    else
-        red = 1
-        green = ((100 - (100 - percentage)) / 100) * 2
-    end
-    return red, green, 0
-end
-
-local chunks = {
-    year = 60 * 60 * 24 * 365,
-    month = 60 * 60 * 24 * 30,
-    day = 60 * 60 * 24,
-    hour = 60 * 60,
-    minute = 60,
-}
-
-function core:SecondsToString(seconds, maxLength)
-    local msg = ""
-    local maxLength = maxLength or 2
-
-    if seconds == 0 then
-        msg = "0"
-    else
-        local sYear, sMonth, sDay, sHour, sMinute = 0, 0, 0, 0, 0
-
-        while seconds > (chunks.year - 1) do
-            sYear = sYear + 1
-            seconds = seconds - chunks.year
-        end
-
-        while seconds > (chunks.month - 1) do
-            sMonth = sMonth + 1
-            seconds = seconds - chunks.month
-        end
-
-        while seconds > (chunks.day - 1) do
-            sDay = sDay + 1
-            seconds = seconds - chunks.day
-        end
-
-        while seconds > (chunks.hour - 1) do
-            sHour = sHour + 1
-            seconds = seconds - chunks.hour
-        end
-
-        while seconds > (chunks.minute - 1) do
-            sMinute = sMinute + 1
-            seconds = seconds - chunks.minute
-        end
-
-        local sLength = 0
-
-        if sYear > 0 and sLength < maxLength then
-            sLength = sLength + 1
-            msg = sYear .. "y "
-        end
-        if sMonth > 0 and sLength < maxLength then
-            sLength = sLength + 1
-            msg = msg .. sMonth .. "mo "
-        end
-        if sDay > 0 and sLength < maxLength then
-            sLength = sLength + 1
-            msg = msg .. sDay .. "d "
-        end
-        if sHour > 0 and sLength < maxLength then
-            sLength = sLength + 1
-            msg = msg .. sHour .. "h "
-        end
-        if sMinute > 0 and sLength < maxLength then
-            sLength = sLength + 1
-            msg = msg .. sMinute .. "m "
-        end
-        if seconds > 0 and sLength < maxLength then
-            sLength = sLength + 1
-            msg = msg .. seconds .. " "
-        end
-    end
-
-    msg = string_sub(msg, 1, string_len(msg) - 1)
-    return msg
-end
-
-function core:GetFullName(unitID)
-    local name = UnitName(unitID)
-    if name then
-        name = name:gsub(" - ", "")
-    end
-    return name
-end
-
-function core:RemoveServerName(name)
-    if name:find("-") then
-        return name:sub(1, name:find("-") - 1)
-    end
-    return name
 end
 
 ---
