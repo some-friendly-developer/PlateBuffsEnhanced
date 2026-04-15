@@ -116,7 +116,7 @@ local function UpdateBuffSize(frame, size)
 end
 
 local function UpdateBuffCDSize(buffFrame, size)
-    buffFrame.cd:SetFont(GetCooldownFont(), size, "NORMAL")
+    buffFrame.cd:SetFont(GetCooldownFont(), size, "OUTLINE")
 end
 
 local function SetStackSize(buffFrame, size)
@@ -236,7 +236,21 @@ local function iconOnUpdate(self, elapsed)
     -- Update cooldown display only if visible
     if P.showCooldown == true then
         self.cd:SetText(core:SecondsToString(timeLeft, 1))
-        self.cd:SetTextColor(core:RedToGreen(timeLeft, self.duration))
+        local mode = P.colorCooldownText or 1
+        local alpha = P.cooldownTextAlpha or 1.0
+        if mode == 1 then
+            self.cd:SetTextColor(core:RedToGreen(timeLeft, self.duration), alpha)
+        elseif mode == 3 then
+            if timeLeft <= 3 then
+                self.cd:SetTextColor(1, 0, 0, alpha)       -- red
+            elseif timeLeft <= 10 then
+                self.cd:SetTextColor(1, 1, 0, alpha)       -- yellow
+            else
+                self.cd:SetTextColor(1, 1, 1, alpha)       -- white
+            end
+        else
+            self.cd:SetTextColor(1, 1, 1, alpha)           -- white (static)
+        end
     end
 
     -- OPTIMIZATION: Cache blink calculation threshold to avoid repeated division
@@ -299,7 +313,8 @@ local function CreateBuffFrame(parentFrame, unit)
 
     -- cd FontString is a child of f.icon (not f) so it renders ABOVE the icon
     -- texture for the Center / Inner-Bottom position modes.
-    local cd = f.icon:CreateFontString(nil, "OVERLAY", "ChatFontNormal")
+    local cd = f.icon:CreateFontString(nil, "OVERLAY")
+    cd:SetFont(GetCooldownFont(), P.cooldownSize or 10, "OUTLINE")
     cd:SetText("0")
     f.cd = cd
     ApplyCooldownPosition(f)

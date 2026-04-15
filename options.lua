@@ -84,6 +84,8 @@ defaultSettings.profile.npcCombatWithOnly = true
 defaultSettings.profile.playerCombatWithOnly = false
 defaultSettings.profile.cooldownFont           = ""  -- empty = default WoW font (Friz Quadrata)
 defaultSettings.profile.cooldownTextPosition   = 3   -- 1=Center, 2=Inner Bottom, 3=Under Icon
+defaultSettings.profile.colorCooldownText      = 1  -- 1=Legacy, 2=Static, 3=Threshold
+defaultSettings.profile.cooldownTextAlpha      = 1.0
 
 
 
@@ -630,6 +632,29 @@ core.DefaultSpellOptionsTable = {
 					desc = L["Show a clock overlay over spell textures showing the time remaining."].."\n"..L["This overlay tends to disappear when the frame's moving."],
 					type = "toggle",
 					order = 3,
+				},
+
+				colorCooldownText = {
+					name = L["Cooldown Text Color"],
+					desc = L["How to color the cooldown countdown text."],
+					type = "select",
+					order = 4,
+					values = {
+						[1] = L["Legacy (green to red)"],
+						[2] = L["Static (white)"],
+						[3] = L["Threshold (white / yellow / red)"],
+					},
+				},
+
+				cooldownTextAlpha = {
+					name = L["Cooldown Text Alpha"],
+					desc = L["Opacity of the cooldown countdown text."],
+					type = "range",
+					order = 5,
+					min  = 0,
+					max  = 1,
+					step = 0.05,
+					isPercent = true,
 				},
 
 				cooldownFont = {
