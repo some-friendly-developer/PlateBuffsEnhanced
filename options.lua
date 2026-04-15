@@ -23,6 +23,10 @@ tooltip:SetOwner(UIParent, "ANCHOR_NONE")
 --~ setfenv(1, core)
 -- local
 local spellIDs = {}
+-- Cache per-spell texture path and description so GetSpellInfo / tooltip:SetHyperlink
+-- are only called once per spell, not on every slider-drag BuildSpellUI rebuild.
+local spellTextureCache = {}
+local spellDescCache    = {}
 
 local defaultSettings = core.defaultSettings
 local L = core.L or LibStub("AceLocale-3.0"):GetLocale(folder, true)
@@ -782,42 +786,30 @@ function core:BuildSpellUI()
 	end)
 	
 	
-	local testDone = false
 	local spellName, data
-	local spellDesc, spellTexture
-	local iconSize
-	local nameColour
 	for i=1, table_getn(list) do 
 		spellName = list[i]
 		data = P.spellOpts[spellName]
-		iconSize = data.iconSize or P.iconSize
-		
-		if data.show == 1 then
-			nameColour = "|cff00ff00%s|r" --green
-		elseif data.show == 3 then 
-			nameColour = "|cffff0000%s|r" --red
-		else
-			nameColour = "|cffffff00%s|r"--yellow
-		end
-		
-		
-		spellDesc = "??"
-		spellTexture = "Interface\\Icons\\"..core.unknownIcon
-		-- Use stored spell ID first (works for any spell); fall back to name (own spells only)
-		local resolvedId = data.spellId
-		local _n, _r, _t = GetSpellInfo(resolvedId or spellName)
-		if _t then
-			spellTexture = _t
-		end
-		-- Populate spellIDs for tooltip lookup
-		if resolvedId then
-			spellIDs[spellName] = resolvedId
-		end
-		if spellIDs[spellName] then
-			tooltip:SetHyperlink("spell:"..spellIDs[spellName])
-			local lines = tooltip:NumLines()
-			if lines > 0 then
-				spellDesc = _G[folder.."TooltipTextLeft"..lines] and _G[folder.."TooltipTextLeft"..lines]:GetText() or "??"
+
+		-- Only do the expensive lookups once per spell (not on every slider-drag rebuild)
+		if not spellTextureCache[spellName] then
+			local resolvedId = data.spellId
+			local _n, _r, _t = GetSpellInfo(resolvedId or spellName)
+			if _t then
+				spellTextureCache[spellName] = _t
+			end
+			if resolvedId then
+				spellIDs[spellName] = resolvedId
+			end
+			if spellIDs[spellName] then
+				tooltip:SetHyperlink("spell:"..spellIDs[spellName])
+				local lines = tooltip:NumLines()
+				if lines > 0 then
+					local txt = _G[folder.."TooltipTextLeft"..lines] and _G[folder.."TooltipTextLeft"..lines]:GetText()
+					if txt then
+						spellDescCache[spellName] = txt
+					end
+				end
 			end
 		end
 		
@@ -826,8 +818,19 @@ function core:BuildSpellUI()
 		--add spell to table.
 		SpellOptionsTable.args.spellList.args[spellName] = {
 			type	= "group",
-			name	= nameColour:format(spellName.." ("..iconSize..")"),
-			desc	= spellDesc, --L["Spell name"],
+			name	= function(info)
+				local sn = info[#info]
+				local d = P.spellOpts[sn]
+				if not d then return sn end
+				local sz = d.iconSize or P.iconSize
+				local c
+				if d.show == 1 then c = "|cff00ff00%s|r"
+				elseif d.show == 3 then c = "|cffff0000%s|r"
+				else c = "|cffffff00%s|r" end
+				local tex = spellTextureCache[sn] or ("Interface\\Icons\\"..core.unknownIcon)
+				return "|T"..tex..":20:20|t " .. c:format(sn.." ("..sz..")")
+			end,
+			desc	= spellDescCache[spellName], --L["Spell name"],
 			order = i,
 			args={}
 		}
@@ -861,9 +864,7 @@ function core:BuildSpellUI()
 			step	= 4,
 			set = function(info,val) 
 				P.spellOpts[info[2]].iconSize = val
-				
 				core:ResetIconSizes()
-				core:BuildSpellUI()
 			end,
 			get = function(info) return P.spellOpts[info[2]].iconSize or P.iconSize end
 		}
@@ -878,13 +879,11 @@ function core:BuildSpellUI()
 			step	= 1,
 			set = function(info,val) 
 				P.spellOpts[info[2]].cooldownSize = val
-				
 				core:ResetCooldownSize()
 				core:ResetAllPlateIcons()
 				core:ResetIconSizes()--Adjust the frame height with the new Cooldown Text Size
 		--~ 		core:UpdateBarsSize()
 				core:ShowAllKnownSpells()
-				core:BuildSpellUI()
 			end,
 			get = function(info) return P.spellOpts[info[2]].cooldownSize or P.cooldownSize end
 		}
@@ -900,28 +899,8 @@ function core:BuildSpellUI()
 			set = function(info,val) 
 				P.spellOpts[info[2]].stackSize = val
 				core:ResetStackSizes()
-				core:BuildSpellUI()
 			end,
 			get = function(info) return P.spellOpts[info[2]].stackSize or P.stackSize end
-		}
-
-		local previewSize = data.iconSize or P.iconSize
-		SpellOptionsTable.args.spellList.args[spellName].args.previewGroup = {
-			type = "group",
-			name = L["Preview"],
-			order = 50,
-			inline = true,
-			args = {
-				previewIcon = {
-					type = "description",
-					name = spellName .. " (" .. previewSize .. "px)",
-					order = 1,
-					image = spellTexture,
-					imageWidth = previewSize,
-					imageHeight = previewSize,
-					width = "full",
-				},
-			},
 		}
 
 		--last
@@ -931,7 +910,11 @@ function core:BuildSpellUI()
 			name	= L["Remove Spell"],
 			desc	= L["Remove spell from list"],
 			func = function(info) 
-				core:RemoveSpell(info[2])
+				local sn = info[2]
+				spellTextureCache[sn] = nil
+				spellDescCache[sn]    = nil
+				spellIDs[sn]          = nil
+				core:RemoveSpell(sn)
 			end
 		}
 		
