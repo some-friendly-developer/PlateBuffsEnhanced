@@ -207,6 +207,7 @@ function core:OnEnable()
         for unit in pairs(guidBuffs) do
             core:UpdateAurasForUnit(unit)
             core:AddBuffsToPlate(unit)
+            core:UpdateAllBarSizes(unit)
         end
     end)
     tickFrame:Show()

@@ -562,7 +562,6 @@ function core:AddBuffsToPlate(unit)
             end
         end
 
-        self:UpdateAllBarSizes(unit)
     end
 end
 
