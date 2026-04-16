@@ -28,16 +28,24 @@ local guidBuffs = core.guidBuffs
 local iconFramePool = {}
 local barFramePool  = {}
 
+-- Expose pool sizes to core for the /pb perf command.
+function core.GetPoolCounts()
+    return #iconFramePool, #barFramePool
+end
+
 local function ReleaseIconFrame(f)
-    f:Hide()
+    f:Hide()   -- triggers iconOnHide which hides stack/cd/borders
     f:ClearAllPoints()
     f:SetScript("OnShow", nil)
     f:SetScript("OnHide", nil)
     f:SetScript("OnUpdate", nil)
     -- Park on UIParent so it isn't anchored to a recycled nameplate frame
     f:SetParent(UIParent)
-    f.unit      = nil
-    f.spellName = nil
+    f.unit        = nil
+    f.spellName   = nil
+    f.stackCount  = 0
+    -- Explicitly clear the stack text so it cannot ghost onto a future owner.
+    f.stack:SetText("")
     iconFramePool[#iconFramePool + 1] = f
 end
 
@@ -123,6 +131,29 @@ local function SetStackSize(buffFrame, size)
     buffFrame.stack:SetFont("Fonts\\FRIZQT__.TTF", size, "OUTLINE")
 end
 
+-- Shared helper: sets the cooldown FontString text and color for a given time left.
+-- Called from both iconOnShow (immediate display) and iconOnUpdate (periodic refresh)
+-- so the color is always correct from the very first frame — no white-flash glimmer.
+local function UpdateCooldownDisplay(f, timeLeft)
+    if not P.showCooldown or timeLeft <= 0 then return end
+    f.cd:SetText(core:SecondsToString(timeLeft, 1))
+    local mode  = P.colorCooldownText or 1
+    local alpha = P.cooldownTextAlpha or 1.0
+    if mode == 1 then
+        f.cd:SetTextColor(core:RedToGreen(timeLeft, f.duration), alpha)
+    elseif mode == 3 then
+        if timeLeft <= 3 then
+            f.cd:SetTextColor(1, 0, 0, alpha)
+        elseif timeLeft <= 10 then
+            f.cd:SetTextColor(1, 1, 0, alpha)
+        else
+            f.cd:SetTextColor(1, 1, 1, alpha)
+        end
+    else
+        f.cd:SetTextColor(1, 1, 1, alpha)
+    end
+end
+
 local function iconOnShow(self)
     self:SetAlpha(P.iconAlpha or 1.0)
 
@@ -132,6 +163,11 @@ local function iconOnShow(self)
 
     if P.showCooldown == true and self.expirationTime > 0 then
         self.cd:Show()
+        local rawTimeLeft = self.expirationTime - GetTime()
+        if rawTimeLeft > 0 then
+            local rounded = core:Round(rawTimeLeft, (rawTimeLeft < 5) and 1 or 0)
+            UpdateCooldownDisplay(self, rounded)
+        end
     end
     
     if P.showCooldownTexture == true and self.expirationTime > 0 then
@@ -169,10 +205,11 @@ local function iconOnShow(self)
     if self.isDebuff then
         local colour = DebuffTypeColor[self.debuffType or ""]
         if colour and P.showDebuffBorder then
-            self.debuffBorderTop:SetVertexColor(colour.r, colour.g, colour.b)
-            self.debuffBorderBottom:SetVertexColor(colour.r, colour.g, colour.b)
-            self.debuffBorderLeft:SetVertexColor(colour.r, colour.g, colour.b)
-            self.debuffBorderRight:SetVertexColor(colour.r, colour.g, colour.b)
+            local r, g, b = colour.r, colour.g, colour.b
+            self.debuffBorderTop:SetVertexColor(r, g, b)
+            self.debuffBorderBottom:SetVertexColor(r, g, b)
+            self.debuffBorderLeft:SetVertexColor(r, g, b)
+            self.debuffBorderRight:SetVertexColor(r, g, b)
             self.debuffBorderTop:Show()
             self.debuffBorderBottom:Show()
             self.debuffBorderLeft:Show()
@@ -235,22 +272,7 @@ local function iconOnUpdate(self, elapsed)
 
     -- Update cooldown display only if visible
     if P.showCooldown == true then
-        self.cd:SetText(core:SecondsToString(timeLeft, 1))
-        local mode = P.colorCooldownText or 1
-        local alpha = P.cooldownTextAlpha or 1.0
-        if mode == 1 then
-            self.cd:SetTextColor(core:RedToGreen(timeLeft, self.duration), alpha)
-        elseif mode == 3 then
-            if timeLeft <= 3 then
-                self.cd:SetTextColor(1, 0, 0, alpha)       -- red
-            elseif timeLeft <= 10 then
-                self.cd:SetTextColor(1, 1, 0, alpha)       -- yellow
-            else
-                self.cd:SetTextColor(1, 1, 1, alpha)       -- white
-            end
-        else
-            self.cd:SetTextColor(1, 1, 1, alpha)           -- white (static)
-        end
+        UpdateCooldownDisplay(self, timeLeft)
     end
 
     -- OPTIMIZATION: Cache blink calculation threshold to avoid repeated division
@@ -486,97 +508,107 @@ function core:BuildIconFrames(unit)
     end
 end
 
+-- Module-level sort comparator: avoids allocating a new closure table on every sort call.
+local function auraSort(a, b)
+    if a.playerCast ~= b.playerCast then
+        return (a.playerCast or 0) > (b.playerCast or 0)
+    elseif a.expirationTime == b.expirationTime then
+        return a.name < b.name
+    else
+        return (a.expirationTime or 0) < (b.expirationTime or 0)
+    end
+end
+
 ---
 --- BUFF DISPLAY & UPDATES
 ---
 
 function core:AddBuffsToPlate(unit)
-    -- unit is the key, not plate
     local numBars = P.numBars or 2
     local iconsPerBar = P.iconsPerBar or 6
     local totalIcons = numBars * iconsPerBar
-    
+
     if not buffFrames[unit] or not buffFrames[unit][totalIcons] then
         return
     end
 
-    if guidBuffs[unit] then
-        -- OPTIMIZATION: Only sort if aura count changed (simple delta detection)
-        local auraCount = #(guidBuffs[unit] or {})
-        local shouldSort = (buffFrames[unit].lastAuraCount or 0) ~= auraCount
-        buffFrames[unit].lastAuraCount = auraCount
-        
-        if shouldSort then
-            -- Sort buffs: player cast first, then by expiration time, then by name
-            table_sort(guidBuffs[unit], function(a, b)
-                if a and b then
-                    if a.playerCast ~= b.playerCast then
-                        return (a.playerCast or 0) > (b.playerCast or 0)
-                    elseif a.expirationTime == b.expirationTime then
-                        return a.name < b.name
-                    else
-                        return (a.expirationTime or 0) < (b.expirationTime or 0)
-                    end
-                end
-            end)
-        end
+    local auras = guidBuffs[unit]
+    if not auras then return end
 
-        -- Update icon frames with aura data
-        for i = 1, totalIcons do
-            if buffFrames[unit][i] then
-                if guidBuffs[unit][i] then
-                    buffFrames[unit][i].spellName = guidBuffs[unit][i].name or ""
-                    buffFrames[unit][i].expirationTime = guidBuffs[unit][i].expirationTime or 0
-                    buffFrames[unit][i].duration = guidBuffs[unit][i].duration or 1
-                    buffFrames[unit][i].startTime = guidBuffs[unit][i].startTime or GetTime()
-                    buffFrames[unit][i].stackCount = guidBuffs[unit][i].stackCount or 0
-                    buffFrames[unit][i].isDebuff = guidBuffs[unit][i].isDebuff
-                    buffFrames[unit][i].debuffType = guidBuffs[unit][i].debuffType
-                    buffFrames[unit][i].playerCast = guidBuffs[unit][i].playerCast
+    -- Always sort: aura timers change each tick so the previous order may be stale
+    -- even when the count hasn't changed. The comparator is a module-level function
+    -- so no closure is allocated per call.
+    table_sort(auras, auraSort)
 
-                    -- Set the texture exactly like original PlateBuffs
-                    -- Icon from UnitAura is already a full path like "Interface\Icons\IconName"
-                    if guidBuffs[unit][i].icon and guidBuffs[unit][i].icon ~= "" then
-                        buffFrames[unit][i].texture:SetTexture(guidBuffs[unit][i].icon)
-                        buffFrames[unit][i].texture:SetTexCoord(0, 1, 0, 1)
-                        buffFrames[unit][i].texture:SetAlpha(P.iconAlpha)
-                    else
-                        -- Fallback to question mark with full path
-                        buffFrames[unit][i].texture:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-                        buffFrames[unit][i].texture:SetTexCoord(0, 1, 0, 1)
-                        buffFrames[unit][i].texture:SetAlpha(P.iconAlpha)
-                    end
+    local iconAlpha = P.iconAlpha
+    local barsDirty = false
 
-                    buffFrames[unit][i]:Show()
-                    iconOnShow(buffFrames[unit][i])
-                    iconOnUpdate(buffFrames[unit][i], 1)
+    for i = 1, totalIcons do
+        local f = buffFrames[unit][i]
+        if f then
+            local aura = auras[i]
+            if aura then
+                local wasShown = f:IsShown()
+                -- Write fresh aura data onto the frame before any display logic runs.
+                f.spellName      = aura.name
+                f.expirationTime = aura.expirationTime
+                f.duration       = aura.duration
+                f.startTime      = aura.startTime
+                f.stackCount     = aura.stackCount
+                f.isDebuff       = aura.isDebuff
+                f.debuffType     = aura.debuffType
+                f.playerCast     = aura.playerCast
+                -- Reset lastUpdate so OnUpdate recalculates on the very next tick.
+                f.lastUpdate     = 0
+                local icon = aura.icon
+                if icon and icon ~= "" then
+                    f.texture:SetTexture(icon)
                 else
-                    buffFrames[unit][i]:Hide()
+                    f.texture:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+                end
+                f.texture:SetTexCoord(0, 1, 0, 1)
+                f.texture:SetAlpha(iconAlpha)
+
+                if not wasShown then
+                    -- :Show() fires OnShow → iconOnShow handles all visual setup.
+                    f:Show()
+                    barsDirty = true
+                else
+                    -- Frame is already visible: OnShow will NOT fire again.
+                    -- Call iconOnShow explicitly so stack text, cooldown, debuff
+                    -- borders and icon size are refreshed with the new aura data.
+                    iconOnShow(f)
+                end
+            else
+                if f:IsShown() then
+                    f:Hide()
+                    barsDirty = true
                 end
             end
         end
+    end
 
-        -- Ensure bar frames are shown/hidden based on content
+    -- Update bar visibility and sizes only when the set of visible icons changed.
+    if barsDirty then
         for barIdx = 1, numBars do
-            if buffBars[unit] and buffBars[unit][barIdx] then
-                -- Count visible icons in this bar
+            local bar = buffBars[unit] and buffBars[unit][barIdx]
+            if bar then
+                local startIcon = (barIdx - 1) * iconsPerBar + 1
+                local endIcon   = barIdx * iconsPerBar
                 local visibleCount = 0
-                local startIcon = (barIdx - 1) * (P.iconsPerBar or 6) + 1
-                local endIcon = barIdx * (P.iconsPerBar or 6)
                 for iconIdx = startIcon, endIcon do
                     if buffFrames[unit][iconIdx] and buffFrames[unit][iconIdx]:IsShown() then
                         visibleCount = visibleCount + 1
                     end
                 end
-                
                 if visibleCount > 0 then
-                    buffBars[unit][barIdx]:Show()
+                    bar:Show()
                 else
-                    buffBars[unit][barIdx]:Hide()
+                    bar:Hide()
                 end
             end
         end
-
+        self:UpdateAllBarSizes(unit)
     end
 end
 
@@ -606,47 +638,39 @@ end
 --- BAR SIZE MANAGEMENT
 ---
 
-local function GetBarChildrenSize(n, ...)
-    local frame
-    local totalWidth = 1
+-- Calculates total width and max height of visible (or all) icon children in a bar.
+-- Uses frame references stored in buffFrames instead of GetChildren() to avoid
+-- the vararg allocation that GetChildren() causes on every call.
+local function GetBarChildrenSize(unit, barIdx)
+    local iconsPerBar = P.iconsPerBar
+    local startIcon   = (barIdx - 1) * iconsPerBar + 1
+    local endIcon     = barIdx * iconsPerBar
+    local totalWidth  = 1
     local totalHeight = 1
-    if n > P.iconsPerBar then
-        n = P.iconsPerBar
-    end
-    for i = 1, n do
-        frame = select(i, ...)
-        if P.shrinkBar == true then
-            if frame:IsShown() then
-                totalWidth = totalWidth + frame:GetWidth()
-                if frame:GetHeight() > totalHeight then
-                    totalHeight = frame:GetHeight()
-                end
-            end
-        else
-            totalWidth = totalWidth + frame:GetWidth()
-            if frame:GetHeight() > totalHeight then
-                totalHeight = frame:GetHeight()
-            end
+    local shrink      = P.shrinkBar
+    local frames      = buffFrames[unit]
+    if not frames then return totalWidth, totalHeight end
+    for idx = startIcon, endIcon do
+        local f = frames[idx]
+        if f and (not shrink or f:IsShown()) then
+            totalWidth = totalWidth + f:GetWidth()
+            local h = f:GetHeight()
+            if h > totalHeight then totalHeight = h end
         end
     end
     return totalWidth, totalHeight
 end
 
-local function UpdateBarSize(barFrame)
-    if barFrame:GetNumChildren() == 0 then
-        return
-    end
-
-    local totalWidth, totalHeight = GetBarChildrenSize(barFrame:GetNumChildren(), barFrame:GetChildren())
-
-    barFrame:SetWidth(totalWidth)
-    barFrame:SetHeight(totalHeight)
+local function UpdateBarSize(unit, barIdx, barFrame)
+    local w, h = GetBarChildrenSize(unit, barIdx)
+    barFrame:SetWidth(w)
+    barFrame:SetHeight(h)
 end
 
 function core:UpdateAllBarSizes(unit)
     for r = 1, P.numBars do
         if buffBars[unit] and buffBars[unit][r] then
-            UpdateBarSize(buffBars[unit][r])
+            UpdateBarSize(unit, r, buffBars[unit][r])
         end
     end
 end

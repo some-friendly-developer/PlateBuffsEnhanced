@@ -77,6 +77,31 @@ local buffBars = core.buffBars
 local guidBuffs = core.guidBuffs
 local buffFrames = core.buffFrames
 
+-- Aura entry object pool: reuse aura data tables across poll cycles to eliminate
+-- the GC pressure of creating/destroying dozens of small tables per second.
+local auraEntryPool = {}
+local function AcquireAuraEntry()
+    local n = #auraEntryPool
+    if n > 0 then
+        local e = auraEntryPool[n]
+        auraEntryPool[n] = nil
+        return e
+    end
+    return {}
+end
+local function ReleaseAuraEntry(e)
+    -- Nil all fields so stale data cannot leak into reused entries.
+    e.name = nil; e.icon = nil; e.spellId = nil
+    e.expirationTime = nil; e.duration = nil; e.startTime = nil
+    e.stackCount = nil; e.playerCast = nil; e.caster = nil
+    e.isDebuff = nil; e.debuffType = nil
+    auraEntryPool[#auraEntryPool + 1] = e
+end
+
+-- Per-unit timestamp set by UNIT_AURA; the tick skips units whose UNIT_AURA fired
+-- within the same poll interval to avoid processing each unit twice.
+local unitLastUpdate = {}
+
 -- Single shared ticker: UNIT_AURA does not fire for nameplate unit tokens in WotLK 3.3.5,
 -- so we poll UnitAura on a 250ms interval instead of one OnUpdate per bar frame.
 local AURA_POLL_INTERVAL = 0.25
@@ -204,12 +229,20 @@ function core:OnEnable()
     tickFrame.elapsed = 0
     tickFrame:SetScript("OnUpdate", function(self, elapsed)
         self.elapsed = self.elapsed + elapsed
-        if self.elapsed < (P.auraPollInterval or AURA_POLL_INTERVAL) then return end
+        local interval = P.auraPollInterval or AURA_POLL_INTERVAL
+        if self.elapsed < interval then return end
         self.elapsed = 0
+        -- Skip units recently refreshed by UNIT_AURA within the same interval to
+        -- prevent processing the same unit twice in quick succession.
+        local now = GetTime()
+        local halfInterval = interval * 0.5
         for unit in pairs(guidBuffs) do
-            core:UpdateAurasForUnit(unit)
-            core:AddBuffsToPlate(unit)
-            core:UpdateAllBarSizes(unit)
+            local last = unitLastUpdate[unit]
+            if not last or (now - last) >= halfInterval then
+                core:UpdateAurasForUnit(unit)
+                core:AddBuffsToPlate(unit)
+                -- UpdateAllBarSizes is called inside AddBuffsToPlate when icons change.
+            end
         end
     end)
     tickFrame:Show()
@@ -220,7 +253,7 @@ function core:OnDisable()
     tickFrame:Hide()
     tickFrame:SetScript("OnUpdate", nil)
 
-    -- Release all active nameplate frames back to the pools
+    -- Release all active nameplate frames and aura entries back to the pools.
     local units = {}
     for unit in pairs(guidBuffs) do
         units[#units + 1] = unit
@@ -228,7 +261,15 @@ function core:OnDisable()
     for _, unit in ipairs(units) do
         self:HidePlateSpells(unit)
         self:ReleaseBuffBars(unit)
+        local auras = guidBuffs[unit]
+        if auras then
+            for i = #auras, 1, -1 do
+                ReleaseAuraEntry(auras[i])
+                auras[i] = nil
+            end
+        end
         guidBuffs[unit] = nil
+        unitLastUpdate[unit] = nil
     end
 end
 
@@ -239,15 +280,27 @@ end
 
 function core:MySlashProcessorFunc(input)
     if input == "debug" then
-        -- Debug: Show aura data info
-        -- Count plates correctly (table_getn doesn't work with string keys)
+        -- Basic state summary (safe to call in any situation).
         local plateCount = 0
-        for unit in pairs(buffFrames or {}) do
-            plateCount = plateCount + 1
+        for _ in pairs(buffFrames or {}) do plateCount = plateCount + 1 end
+        local poolSize = #auraEntryPool
+        self:Print(string.format(
+            "Plates tracked: %d | Aura entry pool: %d | Memory: %.1f KB",
+            plateCount, poolSize, collectgarbage("count")))
+
+    elseif input == "perf" then
+        -- Performance snapshot: memory usage and pool sizes.
+        collectgarbage("collect")
+        local mem = collectgarbage("count")
+        local iconPool, barPool = 0, 0
+        -- These are local to frames.lua; we expose counts via core for the report.
+        if core.GetPoolCounts then
+            iconPool, barPool = core.GetPoolCounts()
         end
-        
-        self:Print("Debug: addon is loaded and tracking nameplates.")
-        
+        self:Print(string.format(
+            "[PBE Perf] Memory after GC: %.1f KB | Aura pool: %d entries",
+            mem, #auraEntryPool))
+
     elseif input == "test" then
         -- Manual test: try to find and process plates
         self:Print("Test: scanning for nameplates...")
@@ -259,48 +312,11 @@ function core:MySlashProcessorFunc(input)
                     if plate.nameplateUnitToken then
                         local unit = plate.nameplateUnitToken
                         print("    Plate " .. idx .. ": " .. unit)
-                        
-                        -- Try to query auras with different unit references
-                        print("      Testing UnitAura queries:")
-                        
-                        -- Try with nameplate token
-                        local name1, _ = UnitAura(unit, 1, "HARMFUL")
-                        print("        UnitAura('" .. unit .. "'): " .. (name1 or "nil"))
-                        
-                        -- Try other queries with nameplate token
-                        print("        UnitExists('" .. unit .. "'): " .. tostring(UnitExists(unit)))
+                        print("      UnitExists: " .. tostring(UnitExists(unit)))
                         local unitName = UnitName(unit)
-                        print("        UnitName('" .. unit .. "'): " .. (unitName or "nil"))
-                        
-                        -- Try with target
-                        if UnitExists("target") then
-                            local name2, _ = UnitAura("target", 1, "HARMFUL")
-                            print("        UnitAura('target'): " .. (name2 or "nil"))
-                            print("        Target name: " .. UnitName("target"))
-                        end
-                        
-                        -- Dump frame properties
-                        print("      Frame properties:")
-                        if plate.UnitFrame then
-                            print("        plate.UnitFrame exists")
-                        end
-                        if plate.unit then
-                            print("        plate.unit: " .. tostring(plate.unit))
-                        end
-                        if plate.guid then
-                            print("        plate.guid: " .. tostring(plate.guid))
-                        end
-                        if plate.nameplateUnitToken then
-                            print("        plate.nameplateUnitToken: " .. tostring(plate.nameplateUnitToken))
-                        end
-                        
-                        -- Try all properties
-                        print("      All frame properties:")
-                        for key, val in pairs(plate) do
-                            if type(val) ~= "table" and type(val) ~= "userdata" then
-                                print("        " .. key .. ": " .. tostring(val))
-                            end
-                        end
+                        print("      UnitName: " .. (unitName or "nil"))
+                        local name1 = UnitAura(unit, 1, "HARMFUL")
+                        print("      First debuff: " .. (name1 or "none"))
                     end
                 end
             else
@@ -355,7 +371,16 @@ function core:NAME_PLATE_UNIT_REMOVED(event, unit)
     Debug("NAME_PLATE_UNIT_REMOVED", unit)
     self:HidePlateSpells(unit)   -- returns icon frames to pool
     self:ReleaseBuffBars(unit)   -- returns bar frames to pool
+    -- Release all pooled aura entries for this unit before clearing the table.
+    local auras = guidBuffs[unit]
+    if auras then
+        for i = #auras, 1, -1 do
+            ReleaseAuraEntry(auras[i])
+            auras[i] = nil
+        end
+    end
     guidBuffs[unit] = nil
+    unitLastUpdate[unit] = nil
 end
 
 function core:UNIT_AURA(event, ...)
@@ -371,7 +396,8 @@ function core:UNIT_AURA(event, ...)
         return
     end
 
-    -- Update aura data and refresh display
+    -- Stamp timestamp so the shared tick skips this unit if it fires soon after.
+    unitLastUpdate[unit] = GetTime()
     self:UpdateAurasForUnit(unit)
     self:AddBuffsToPlate(unit)
 end
@@ -464,55 +490,52 @@ end
 ---
 
 function core:UpdateAurasForUnit(unit, frame)
-    -- Clear existing aura data for this unit
-    guidBuffs[unit] = {}
+    local auras = guidBuffs[unit]
+    if not auras then return end
+
+    -- Wipe existing entries in-place and return them to the pool.
+    -- This avoids allocating a new table on every poll cycle (which would create
+    -- significant GC pressure in large raids with many active nameplates).
+    for i = #auras, 1, -1 do
+        ReleaseAuraEntry(auras[i])
+        auras[i] = nil
+    end
 
     -- Dynamic filter: if this unit currently shouldn't show auras (e.g. not in combat
-    -- yet when npcCombatWithOnly=true), leave guidBuffs empty so AddBuffsToPlate hides
+    -- yet when npcCombatWithOnly=true), leave the table empty so AddBuffsToPlate hides
     -- all icons. The tick will re-evaluate every poll cycle automatically.
     if not self:ShouldShowNameplateAuras(unit) then
         return
     end
 
-    local debuffCount = 0
-
-    -- The "unit" parameter is for the nameplate (e.g., "nameplate1")
-    -- Try to query auras directly with the nameplate token first
-    local queryUnit = unit
-    
-    local i = 1
+    -- Use a direct index counter instead of table_insert to avoid the overhead
+    -- of the function call and the internal length lookup on every iteration.
+    local n = 0
 
     -- Collect HELPFUL auras (buffs)
+    local i = 1
     while true do
         local name, rank, icon, count, dispelType, duration, expirationTime, unitCaster,
-              isStealable, shouldConsolidate, spellId = UnitAura(queryUnit, i, "HELPFUL")
-
-        if not name then
-            break
-        end
-        
-
+              isStealable, shouldConsolidate, spellId = UnitAura(unit, i, "HELPFUL")
+        if not name then break end
 
         if self:ShouldShowAura(name, unitCaster, "BUFF") then
-            -- Ensure all values are proper types
-            duration = tonumber(duration) or 0
-            expirationTime = tonumber(expirationTime) or 0
-            count = tonumber(count) or 0
-            icon = tostring(icon) or ""
-            
-            table_insert(guidBuffs[unit], {
-                name = name,
-                icon = icon,
-                spellId = spellId,
-                expirationTime = expirationTime,
-                duration = duration,
-                startTime = expirationTime - duration,
-                stackCount = count,
-                playerCast = (unitCaster == "player") and 1 or nil,
-                caster = unitCaster,
-                isDebuff = false,
-                debuffType = nil,
-            })
+            local expTime = tonumber(expirationTime) or 0
+            local dur     = tonumber(duration) or 0
+            n = n + 1
+            local e = AcquireAuraEntry()
+            e.name          = name
+            e.icon          = tostring(icon)
+            e.spellId       = spellId
+            e.expirationTime = expTime
+            e.duration      = dur
+            e.startTime     = expTime - dur
+            e.stackCount    = tonumber(count) or 0
+            e.playerCast    = (unitCaster == "player") and 1 or nil
+            e.caster        = unitCaster
+            e.isDebuff      = false
+            e.debuffType    = nil
+            auras[n]        = e
         end
         i = i + 1
     end
@@ -521,42 +544,29 @@ function core:UpdateAurasForUnit(unit, frame)
     i = 1
     while true do
         local name, rank, icon, count, dispelType, duration, expirationTime, unitCaster,
-              isStealable, shouldConsolidate, spellId = UnitAura(queryUnit, i, "HARMFUL")
+              isStealable, shouldConsolidate, spellId = UnitAura(unit, i, "HARMFUL")
+        if not name then break end
 
-        if not name then
-            break
-        end
-        
-
-
-        debuffCount = debuffCount + 1
-        
-        local shouldShow = self:ShouldShowAura(name, unitCaster, "DEBUFF", dispelType)
-        
-        if shouldShow then
-            -- Ensure all values are proper types
-            duration = tonumber(duration) or 0
-            expirationTime = tonumber(expirationTime) or 0
-            count = tonumber(count) or 0
-            icon = tostring(icon) or ""
-            
-            table_insert(guidBuffs[unit], {
-                name = name,
-                icon = icon,
-                spellId = spellId,
-                expirationTime = expirationTime,
-                duration = duration,
-                startTime = expirationTime - duration,
-                stackCount = count,
-                playerCast = (unitCaster == "player") and 1 or nil,
-                caster = unitCaster,
-                isDebuff = true,
-                debuffType = dispelType or "none",
-            })
+        if self:ShouldShowAura(name, unitCaster, "DEBUFF", dispelType) then
+            local expTime = tonumber(expirationTime) or 0
+            local dur     = tonumber(duration) or 0
+            n = n + 1
+            local e = AcquireAuraEntry()
+            e.name          = name
+            e.icon          = tostring(icon)
+            e.spellId       = spellId
+            e.expirationTime = expTime
+            e.duration      = dur
+            e.startTime     = expTime - dur
+            e.stackCount    = tonumber(count) or 0
+            e.playerCast    = (unitCaster == "player") and 1 or nil
+            e.caster        = unitCaster
+            e.isDebuff      = true
+            e.debuffType    = dispelType or "none"
+            auras[n]        = e
         end
         i = i + 1
     end
-    
 end
 
 function core:IsCasterPlayer(caster)

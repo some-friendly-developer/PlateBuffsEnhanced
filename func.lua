@@ -92,54 +92,44 @@ local chunks = {
 function core:SecondsToString(seconds, maxLenth)			--
 -- Returns the number of hours in a readable string format.	--
 -- maxLenth 1="1h", 2="1h, 33m", 3="1h, 33m, 21s", ect		--
+-- OPTIMIZATION: Fast-path for the common case (sub-hour     --
+-- cooldowns). Only falls back to the full decomposition for  --
+-- values >= 1 hour, which is rare in combat scenarios.       --
 --------------------------------------------------------------
-	local msg = "";
---~ 	seconds = self:Round(seconds);
+	if seconds == 0 then return "0" end
 	local maxLenth = maxLenth or 2
-	if seconds==0 then
-		msg = "0s "
-	else
-		local sYear  = math_floor(seconds / chunks.year);   seconds = seconds % chunks.year;
-		local sMonth = math_floor(seconds / chunks.month);  seconds = seconds % chunks.month;
-		local sDay   = math_floor(seconds / chunks.day);    seconds = seconds % chunks.day;
-		local sHour  = math_floor(seconds / chunks.hour);   seconds = seconds % chunks.hour;
-		local sMinute = math_floor(seconds / chunks.minute); seconds = seconds % chunks.minute;
-		
-		local sLenth = 0;
-		if sYear > 0 and sLenth < maxLenth then
-			sLenth = sLenth + 1;
-			msg = sYear.."y ";
-		end
-		if sMonth > 0 and sLenth < maxLenth then
-			sLenth = sLenth + 1;
-			msg = msg..sMonth.."mo "
-		end
 
-		if sDay > 0 and sLenth < maxLenth then
-			sLenth = sLenth + 1;
-			msg = msg..sDay.."d "
+	-- Fast-path: the vast majority of aura cooldowns are sub-hour.
+	if seconds < chunks.hour then
+		local sMinute = math_floor(seconds / chunks.minute)
+		local sSecond = seconds % chunks.minute
+		if sMinute > 0 then
+			if maxLenth >= 2 and sSecond > 0 then
+				return sMinute.."m "..sSecond
+			end
+			return sMinute.."m"
 		end
-
-		if sHour > 0 and sLenth < maxLenth then
-			sLenth = sLenth + 1;
-			msg = msg..sHour.."h "
-		end
-		
-		if sMinute > 0 and sLenth < maxLenth then
-			sLenth = sLenth + 1;
-			msg = msg..sMinute.."m "
-		end
-		
-		if seconds > 0 and sLenth < maxLenth then
-			sLenth = sLenth + 1;
-			msg = msg..seconds.." "
-		end
-		
+		return tostring(sSecond)
 	end
 
-	msg	= string_sub(msg,1,string_len(msg) - 1);--Remove the last space in the string.
-	
-	return msg;
+	-- Slow-path: hours, days, months, years (rare for nameplate auras).
+	local msg = ""
+	local rem = seconds
+	local sYear  = math_floor(rem / chunks.year);   rem = rem % chunks.year
+	local sMonth = math_floor(rem / chunks.month);  rem = rem % chunks.month
+	local sDay   = math_floor(rem / chunks.day);    rem = rem % chunks.day
+	local sHour  = math_floor(rem / chunks.hour);   rem = rem % chunks.hour
+	local sMinute = math_floor(rem / chunks.minute); rem = rem % chunks.minute
+
+	local sLenth = 0
+	if sYear  > 0 and sLenth < maxLenth then sLenth = sLenth+1; msg = sYear.."y " end
+	if sMonth > 0 and sLenth < maxLenth then sLenth = sLenth+1; msg = msg..sMonth.."mo " end
+	if sDay   > 0 and sLenth < maxLenth then sLenth = sLenth+1; msg = msg..sDay.."d " end
+	if sHour  > 0 and sLenth < maxLenth then sLenth = sLenth+1; msg = msg..sHour.."h " end
+	if sMinute > 0 and sLenth < maxLenth then sLenth = sLenth+1; msg = msg..sMinute.."m " end
+	if rem    > 0 and sLenth < maxLenth then msg = msg..rem.." " end
+
+	return string_sub(msg, 1, string_len(msg) - 1)
 end
 
 ------------------------------------------------------------------
