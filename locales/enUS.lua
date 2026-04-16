@@ -130,3 +130,5 @@ L["Opacity of the cooldown countdown text."] = true
 L["Icon Center"] = true
 L["Icon Inner Bottom"] = true
 L["Under Icon"] = true
+L["Icon Alpha"] = true
+L["Opacity of aura icons."] = true

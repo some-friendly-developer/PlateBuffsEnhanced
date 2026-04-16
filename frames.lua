@@ -124,7 +124,7 @@ local function SetStackSize(buffFrame, size)
 end
 
 local function iconOnShow(self)
-    self:SetAlpha(1)
+    self:SetAlpha(P.iconAlpha or 1.0)
 
     self.cd:Hide()
     self.cdtexture:Hide()
@@ -539,12 +539,12 @@ function core:AddBuffsToPlate(unit)
                     if guidBuffs[unit][i].icon and guidBuffs[unit][i].icon ~= "" then
                         buffFrames[unit][i].texture:SetTexture(guidBuffs[unit][i].icon)
                         buffFrames[unit][i].texture:SetTexCoord(0, 1, 0, 1)
-                        buffFrames[unit][i].texture:SetAlpha(0.65)
+                        buffFrames[unit][i].texture:SetAlpha(P.iconAlpha)
                     else
                         -- Fallback to question mark with full path
                         buffFrames[unit][i].texture:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
                         buffFrames[unit][i].texture:SetTexCoord(0, 1, 0, 1)
-                        buffFrames[unit][i].texture:SetAlpha(0.65)
+                        buffFrames[unit][i].texture:SetAlpha(P.iconAlpha)
                     end
 
                     buffFrames[unit][i]:Show()
@@ -737,6 +737,15 @@ function core:ResetStackSizes()
             SetStackSize(buffFrames[unit][i], 
                         buffFrames[unit][i].spellName and spellOpts and 
                         spellOpts.stackSize or P.stackSize)
+        end
+    end
+end
+
+function core:ResetIconAlpha()
+    local alpha = P.iconAlpha or 1.0
+    for unit in pairs(buffFrames) do
+        for i = 1, #buffFrames[unit] do
+            buffFrames[unit][i]:SetAlpha(alpha)
         end
     end
 end

@@ -90,6 +90,7 @@ defaultSettings.profile.cooldownFont           = ""  -- empty = default WoW font
 defaultSettings.profile.cooldownTextPosition   = 3   -- 1=Center, 2=Inner Bottom, 3=Under Icon
 defaultSettings.profile.colorCooldownText      = 1  -- 1=Legacy, 2=Static, 3=Threshold
 defaultSettings.profile.cooldownTextAlpha      = 1.0
+defaultSettings.profile.iconAlpha              = 1.0
 
 
 
@@ -751,11 +752,26 @@ core.DefaultSpellOptionsTable = {
 			step  = 0.1,
 		},
 
+		iconAlpha = {
+			name = L["Icon Alpha"],
+			desc = L["Opacity of aura icons."],
+			type = "range",
+			order = 15,
+			min  = 0.1,
+			max  = 1.0,
+			step = 0.05,
+			isPercent = true,
+			set = function(info, val)
+				P.iconAlpha = val
+				core:ResetIconAlpha()
+			end,
+		},
+
 		showDebuffBorder = {
 			name = L["Show debuff border"],
 			desc = L["Show a colored border around debuff icons based on magic school."],
 			type = "toggle",
-			order = 15,
+			order = 16,
 		},
 
 	}
