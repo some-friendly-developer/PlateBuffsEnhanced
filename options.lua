@@ -47,6 +47,7 @@ local minIconSize = 16
 local maxIconSize = 80
 local minTextSize = 6
 local maxTextSize = 20
+local maxCooldownSize = 40
 
 --1=all, 2=mine, 3=none
 defaultSettings.profile.defaultBuffShow			= 3
@@ -625,7 +626,7 @@ core.DefaultSpellOptionsTable = {
 					type = "range",
 					order = 2,
 					min   = minTextSize,
-					max   = maxTextSize,
+					max   = maxCooldownSize,
 					step  = 1,
 					set = function(info, val)
 						P.cooldownSize = val
@@ -891,7 +892,7 @@ function core:BuildSpellUI()
 			type = "range",
 			order	= 4,
 			min		= minTextSize,
-			max		= maxTextSize,
+			max		= maxCooldownSize,
 			step	= 1,
 			set = function(info,val) 
 				P.spellOpts[info[2]].cooldownSize = val
