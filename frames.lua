@@ -725,7 +725,7 @@ function core:ResetIconSizes()
             local spellOpts = self:HaveSpellOpts(frame.spellName)
 
             if frame:IsShown() and spellOpts then
-                iconSize = spellOpts.iconSize
+                iconSize = spellOpts.iconSize or P.iconSize
             else
                 iconSize = P.iconSize
             end
