@@ -44,6 +44,8 @@ local function ReleaseIconFrame(f)
     f.unit        = nil
     f.spellName   = nil
     f.stackCount  = 0
+    f.pendingHide = nil
+    f.hideGrace   = 0
     -- Explicitly clear the stack text so it cannot ghost onto a future owner.
     f.stack:SetText("")
     iconFramePool[#iconFramePool + 1] = f
@@ -248,8 +250,22 @@ local function iconOnHide(self)
 end
 
 local function iconOnUpdate(self, elapsed)
+    -- Timeless auras (expirationTime == 0) must not be hidden the instant
+    -- a UNIT_AURA scan misses them (e.g. during a target-death transfer).
+    -- Instead we run a 1.5 s grace period before actually hiding the frame.
     if not self.expirationTime or self.expirationTime <= 0 then
-        return  -- OPTIMIZATION: Skip expensive calculations if no expiration
+        if self.pendingHide then
+            self.hideGrace = (self.hideGrace or 0) + elapsed
+            if self.hideGrace >= 1.5 then
+                self.pendingHide = nil
+                self.hideGrace   = 0
+                self:Hide()
+                if self.unit then
+                    core:UpdateAllBarSizes(self.unit)
+                end
+            end
+        end
+        return
     end
 
     self.lastUpdate = (self.lastUpdate or 0) + elapsed
@@ -381,6 +397,8 @@ local function AcquireIconFrame(parentFrame, unit)
         f.isDebuff       = nil
         f.debuffType     = nil
         f.playerCast     = nil
+        f.pendingHide    = nil
+        f.hideGrace      = 0
         f:SetScript("OnShow",   iconOnShow)
         f:SetScript("OnHide",   iconOnHide)
         f:SetScript("OnUpdate", iconOnUpdate)
@@ -509,14 +527,24 @@ function core:BuildIconFrames(unit)
 end
 
 -- Module-level sort comparator: avoids allocating a new closure table on every sort call.
+--
+-- Timeless auras (expirationTime == 0, e.g. Ebon Gargoyle) are sorted to the END of the
+-- row rather than the beginning.  The naive comparison (0 < any positive timestamp) would
+-- place them first, so whenever the debuff briefly vanishes (e.g. during a target-death
+-- transfer) every other aura shifts one slot to the left, triggering UpdateAllBarSizes and
+-- the visible double-flicker the user sees.  By mapping 0 → math.huge the timeless aura
+-- occupies the last slot; its brief absence no longer shifts any preceding icon.
 local function auraSort(a, b)
     if a.playerCast ~= b.playerCast then
         return (a.playerCast or 0) > (b.playerCast or 0)
-    elseif a.expirationTime == b.expirationTime then
-        return a.name < b.name
-    else
-        return (a.expirationTime or 0) < (b.expirationTime or 0)
     end
+    -- Map timeless (0) to infinity so it sorts after all timed auras.
+    local aExp = (a.expirationTime and a.expirationTime > 0) and a.expirationTime or math.huge
+    local bExp = (b.expirationTime and b.expirationTime > 0) and b.expirationTime or math.huge
+    if aExp == bExp then
+        return a.name < b.name
+    end
+    return aExp < bExp
 end
 
 ---
@@ -558,6 +586,9 @@ function core:AddBuffsToPlate(unit)
                 f.isDebuff       = aura.isDebuff
                 f.debuffType     = aura.debuffType
                 f.playerCast     = aura.playerCast
+                -- Cancel any pending grace-period hide (aura is present again).
+                f.pendingHide    = nil
+                f.hideGrace      = 0
                 -- Reset lastUpdate so OnUpdate recalculates on the very next tick.
                 f.lastUpdate     = 0
                 local icon = aura.icon
@@ -581,8 +612,38 @@ function core:AddBuffsToPlate(unit)
                 end
             else
                 if f:IsShown() then
-                    f:Hide()
-                    barsDirty = true
+                    if f.expirationTime == 0 then
+                        -- Timeless aura: only use the grace period if this spell truly
+                        -- disappeared from the current scan.  If it moved to a different
+                        -- slot (e.g. another aura was added/removed changing sort order),
+                        -- it will be shown there, so hide this frame immediately to avoid
+                        -- showing the same icon twice.
+                        local spellStillPresent = false
+                        local pendingSpell = f.spellName
+                        if pendingSpell then
+                            for j = 1, #auras do
+                                if auras[j].name == pendingSpell then
+                                    spellStillPresent = true
+                                    break
+                                end
+                            end
+                        end
+                        if spellStillPresent then
+                            -- Aura is being shown at a different slot; hide this one now.
+                            f.pendingHide = nil
+                            f.hideGrace   = 0
+                            f:Hide()
+                            barsDirty = true
+                        elseif not f.pendingHide then
+                            -- Aura is truly absent; start the grace period.
+                            f.pendingHide = true
+                            f.hideGrace   = 0
+                        end
+                        -- iconOnUpdate will call UpdateAllBarSizes once the grace period fires.
+                    else
+                        f:Hide()
+                        barsDirty = true
+                    end
                 end
             end
         end
